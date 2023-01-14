@@ -12,7 +12,7 @@ import networks
 
 # set env
 cwd = os.path.dirname(os.path.abspath(__file__))
-root_dir = "C:/deep_learning_046211/ImageCaptionGenerator"
+root_dir = cwd
 text_dir = root_dir + "/Flickr8k_text"
 dataset_dir = root_dir + "/Flickr8k_Dataset"
 token_file = text_dir + "/Flickr8k.token.txt"
@@ -100,7 +100,7 @@ output_size = len(vocab)
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 # create model, send it to device
-decoder = networks.DecoderRNN(hidden_size, output_size, device)
+decoder = networks.DecoderRNN(hidden_size, output_size).to(device)
 
 # loss and optimizer
 criterion = nn.NLLLoss()
@@ -108,7 +108,7 @@ optimizer = torch.optim.SGD(decoder.parameters(), lr=learning_rate)
 #drip scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1.0, gamma=0.95)
 
 # train decoder
-networks.train(train_x, train_y, val_x, val_y, decoder, optimizer, criterion, epochs, teacher_forcing=True, learning_rate=learning_rate)
+networks.train(train_x, train_y, val_x, val_y, decoder, optimizer, criterion, device, epochs, teacher_forcing=True, learning_rate=learning_rate)
 
 # test
 start_time = time.time()
