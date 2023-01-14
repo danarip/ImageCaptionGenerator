@@ -7,10 +7,9 @@ SOS_token = 1
 EOS_token = 2
 
 class DecoderRNN(nn.Module):
-    def __init__(self, hidden_size, output_size, device):
+    def __init__(self, hidden_size, output_size):
         super(DecoderRNN, self).__init__()
         self.hidden_size = hidden_size
-        self.device = device
         self.embedding = nn.Embedding(output_size, hidden_size)
         self.gru = nn.GRU(hidden_size, hidden_size)
         self.out = nn.Linear(hidden_size, output_size)
@@ -23,19 +22,19 @@ class DecoderRNN(nn.Module):
         output = self.softmax(self.out(output[0]))
         return output, hidden
 
-    def initHidden(self):
-        return torch.zeros(1, 1, self.hidden_size, device=self.device)
+    # def initHidden(self):
+    #    return torch.zeros(1, 1, self.hidden_size)
 
 
-def train_sentence(input_tensor, target_tensor, decoder, optimizer, criterion, teacher_forcing):
+def train_sentence(input_tensor, target_tensor, decoder, optimizer, criterion, device, teacher_forcing):
     loss = 0
     optimizer.zero_grad()
 
-    target_tensor = target_tensor.view(-1, 1)
+    target_tensor = target_tensor.view(-1, 1).to(device)
     target_length = target_tensor.size(0)
 
-    decoder_input = torch.tensor([[SOS_token]], device=decoder.device)
-    decoder_hidden = input_tensor.view(1, 1, -1)  # drip
+    decoder_input = torch.tensor([[SOS_token]], device=device)
+    decoder_hidden = input_tensor.view(1, 1, -1).to(device)  # drip
 
     if teacher_forcing:
         # teacher forcing: Feed the target as the next input
@@ -61,20 +60,20 @@ def train_sentence(input_tensor, target_tensor, decoder, optimizer, criterion, t
     return loss.item() / target_length
 
 
-def evaluate_sentence(input_tensor, target_tensor, decoder, criterion):
+def evaluate_sentence(input_tensor, target_tensor, decoder, criterion, device):
     loss = 0
     length = 0
 
-    target_tensor = target_tensor.view(-1, 1)
+    target_tensor = target_tensor.view(-1, 1).to(device)
     target_length = target_tensor.size(0)
 
-    decoder_input = torch.tensor([[SOS_token]], device=decoder.device)
-    decoder_hidden = input_tensor.view(1, 1, -1)  # drip
+    decoder_input = torch.tensor([[SOS_token]], device=device)
+    decoder_hidden = input_tensor.view(1, 1, -1).to(device)   # drip
 
     with torch.no_grad():
 
         for di in range(target_length):
-            decoder_output, decoder_hiddenn = decoder(decoder_input, decoder_hidden)
+            decoder_output, decoder_hidden = decoder(decoder_input, decoder_hidden)
             topv, topi = decoder_output.data.topk(1)
             decoder_input = topi.squeeze().detach()  # detach from history as input
 
@@ -87,8 +86,8 @@ def evaluate_sentence(input_tensor, target_tensor, decoder, criterion):
         return loss.item() / length
 
 
-def train(train_features, train_labels, val_features, val_labels, decoder, optimizer, criterion, epochs, teacher_forcing, learning_rate=0.01):
-    log_interval = 5
+def train(train_features, train_labels, val_features, val_labels, decoder, optimizer, criterion, device, epochs, teacher_forcing, learning_rate=0.01):
+    log_interval = 100
 
     for epoch in range(epochs):
         epoch_start_time = time.time()
@@ -100,7 +99,7 @@ def train(train_features, train_labels, val_features, val_labels, decoder, optim
 
         for i in range(len(train_features)):
             start_time = time.time()
-            loss = train_sentence(train_features[indices[i]], train_labels[indices[i]], decoder, optimizer, criterion, teacher_forcing)
+            loss = train_sentence(train_features[indices[i]], train_labels[indices[i]], decoder, optimizer, criterion, device, teacher_forcing)
             train_losses.append(loss)
 
             if i % log_interval == 0:
@@ -121,11 +120,11 @@ def train(train_features, train_labels, val_features, val_labels, decoder, optim
     print('-' * 89)
 
 
-def evaluate(features, labels, decoder, criterion):
+def evaluate(features, labels, decoder, criterion, device):
     losses = []
     indices = np.arange(len(features))
     np.random.shuffle(indices)
     for i in range(len(features)):
-        loss = evaluate_sentence(features[indices[i]], labels[indices[i]], decoder, criterion)
+        loss = evaluate_sentence(features[indices[i]], labels[indices[i]], decoder, criterion, device)
         losses.append(loss)
     return losses
