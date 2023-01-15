@@ -2,9 +2,11 @@ import numpy as np
 import time
 import torch
 import torch.nn as nn
+from torch.utils.data import TensorDataset, DataLoader
 
 SOS_token = 1
 EOS_token = 2
+
 
 class DecoderRNN(nn.Module):
     def __init__(self, hidden_size, output_size):
@@ -22,30 +24,59 @@ class DecoderRNN(nn.Module):
         output = self.softmax(self.out(output[0]))
         return output, hidden
 
-    # def initHidden(self):
-    #    return torch.zeros(1, 1, self.hidden_size)
+
+class DecoderRNN2(nn.Module):
+    def __init__(self,
+                 feature_size,  # 2048
+                 hidden_size,  # we decide
+                 output_size):  # Vocabulary size
+        super(DecoderRNN2, self).__init__()
+        self.hidden_size = hidden_size
+        self.input = nn.Linear(feature_size, hidden_size)
+        self.embedding = nn.Embedding(output_size, hidden_size)
+        self.gru = nn.GRU(hidden_size, hidden_size)
+        self.output_layer = nn.Linear(hidden_size, output_size)
+        self.softmax = nn.LogSoftmax(dim=1)
+
+    def forward(self, labels, features, init):
+        batch_size = labels.shape[0]
+        if init:
+            hidden = self.input(features)
+        else:
+            hidden = features
+        hidden = hidden.view(1, batch_size, -1)  # 1 x batch size x hidden size
+        output = self.embedding(labels)  # batch size x seq length x representation size
+        output = nn.functional.relu(output)
+        output = torch.transpose(output, 0, 1)  # seq length x batch size x representation size
+        output, hidden = self.gru(output, hidden)
+        # output: seq length x batch size x hidden size
+        output = self.output_layer(output)  #
+        output = self.softmax(output)
+        return output, hidden
 
 
-def train_sentence(input_tensor, target_tensor, decoder, optimizer, criterion, device, teacher_forcing):
+def train_sentence(input_tensor, target_tensor, decoder, optimizer, criterion, device, teacher_forcing, max_length):
     loss = 0
     optimizer.zero_grad()
+    batch_size = input_tensor.shape[0]
 
-    target_tensor = target_tensor.view(-1, 1).to(device)
-    target_length = target_tensor.size(0)
+    # target_tensor = target_tensor.view(-1, 1).to(device)
+    # target_length = target_tensor.size(0)
 
+    # decoder_input = torch.tensor([[SOS_token]], device=device)
     decoder_input = torch.tensor([[SOS_token]], device=device)
-    decoder_hidden = input_tensor.view(1, 1, -1).to(device)  # drip
+    decoder_hidden = input_tensor.view(1, batch_size, -1).to(device)  # drip
 
     if teacher_forcing:
         # teacher forcing: Feed the target as the next input
-        for di in range(target_length):
+        for di in range(max_length):
             decoder_output, decoder_hidden = decoder(decoder_input, decoder_hidden)  # drip
             loss += criterion(decoder_output, target_tensor[di])
             decoder_input = target_tensor[di]  # Teacher forcing
 
     else:
         # use predictions as the next input
-        for di in range(target_length):
+        for di in range(max_length):
             decoder_output, decoder_hidden = decoder(decoder_input, decoder_hidden)
             topv, topi = decoder_output.topk(1)
             decoder_input = topi.squeeze().detach()  # detach from history as input
@@ -57,7 +88,67 @@ def train_sentence(input_tensor, target_tensor, decoder, optimizer, criterion, d
     loss.backward()
     optimizer.step()
 
-    return loss.item() / target_length
+    return loss.item() / max_length
+
+
+def train_sentences_teacher_forcing(input_tensor, labels_tensor, decoder, optimizer, criterion, device):
+    loss = 0
+    optimizer.zero_grad()
+    batch_size = input_tensor.shape[0]
+    max_length = labels_tensor.shape[1]
+
+    decoder_hidden = input_tensor.view(1, batch_size, -1).to(device)  # drip
+    decoder_input = labels_tensor[:, :-1]
+
+    decoder_output, decoder_hidden = decoder(decoder_input, decoder_hidden, init=True)
+    decoder_output = torch.permute(decoder_output, (1, 2, 0))  # drip
+    loss += criterion(decoder_output, labels_tensor[:, 1:])
+
+    loss.backward()
+    optimizer.step()
+
+    return loss.item() / (batch_size * (max_length-1))
+
+
+def train_sentences_non_teacher_forcing(input_tensor, labels_tensor, decoder, optimizer, criterion, device, max_length):
+    loss = 0
+    optimizer.zero_grad()
+    batch_size = input_tensor.shape[0]
+
+    decoder_hidden = input_tensor.view(1, batch_size, -1).to(device)  # drip
+    decoder_input = labels_tensor[:, 0:1]
+
+    for di in range(max_length - 1):
+        decoder_output, decoder_hidden = decoder(decoder_input, decoder_hidden, init=di == 0)
+        topv, topi = decoder_output.topk(1)
+        decoder_input = topi.squeeze(0).detach()  # detach from history as input
+
+        decoder_output = torch.permute(decoder_output, (1, 2, 0))  # drip
+        loss += criterion(decoder_output, labels_tensor[:, (di + 1):(di + 2)])
+
+    loss.backward()
+    optimizer.step()
+
+    return loss.item() / (batch_size * (max_length-1))
+
+
+def evaluate_sentences(input_tensor, labels_tensor, decoder, criterion, device, max_length):
+    with torch.no_grad():
+        loss = 0
+        batch_size = input_tensor.shape[0]
+
+        decoder_hidden = input_tensor.view(1, batch_size, -1).to(device)  # drip
+        decoder_input = labels_tensor[:, 0:1]
+
+        for di in range(max_length - 1):
+            decoder_output, decoder_hidden = decoder(decoder_input, decoder_hidden, init=di == 0)
+            topv, topi = decoder_output.topk(1)
+            decoder_input = topi.squeeze(0).detach()  # detach from history as input
+
+            decoder_output = torch.permute(decoder_output, (1, 2, 0))  # drip
+            loss += criterion(decoder_output, labels_tensor[:, (di + 1):(di + 2)])
+
+    return loss.item() / (batch_size * (max_length-1))
 
 
 def evaluate_sentence(input_tensor, target_tensor, decoder, criterion, device):
@@ -68,7 +159,7 @@ def evaluate_sentence(input_tensor, target_tensor, decoder, criterion, device):
     target_length = target_tensor.size(0)
 
     decoder_input = torch.tensor([[SOS_token]], device=device)
-    decoder_hidden = input_tensor.view(1, 1, -1).to(device)   # drip
+    decoder_hidden = input_tensor.view(1, 1, -1).to(device)  # drip
 
     with torch.no_grad():
 
@@ -86,8 +177,15 @@ def evaluate_sentence(input_tensor, target_tensor, decoder, criterion, device):
         return loss.item() / length
 
 
-def train(train_features, train_labels, val_features, val_labels, decoder, optimizer, criterion, device, epochs, teacher_forcing, learning_rate=0.01):
-    log_interval = 100
+def train(train_features, train_labels, val_features, val_labels, decoder, optimizer, criterion,
+          device, epochs, teacher_forcing, learning_rate=0.01, batch_size=128):
+    log_interval = 10
+
+    train_dataset = TensorDataset(train_features, train_labels)
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size)
+
+    val_dataset = TensorDataset(val_features, val_labels)
+    val_dataloader = DataLoader(val_dataset, batch_size=batch_size)
 
     for epoch in range(epochs):
         epoch_start_time = time.time()
@@ -97,22 +195,24 @@ def train(train_features, train_labels, val_features, val_labels, decoder, optim
         indices = np.arange(len(train_features))
         np.random.shuffle(indices)
 
-        for i in range(len(train_features)):
+        # for i in range(len(train_features)):
+        for i, (features, labels) in enumerate(train_dataloader):
+            # send data to device
+            features = features.to(device)
+            labels = labels.to(device)
+
             start_time = time.time()
-            loss = train_sentence(train_features[indices[i]], train_labels[indices[i]], decoder, optimizer, criterion, device, teacher_forcing)
+            # loss = train_sentence(train_features[indices[i]], train_labels[indices[i]], decoder, optimizer, criterion, device, teacher_forcing)
+            loss = train_sentences_non_teacher_forcing(features, labels, decoder, optimizer, criterion, device,
+                                                       max_length=20)
             train_losses.append(loss)
 
             if i % log_interval == 0:
-                print('| epoch {:3d} | i {:4d} | time: {:5.2f}s | train loss {:5.2f}'
+                print('| epoch {:3d} | i {:4d} | time: {:5.2f}s | train loss {:5.5f}'
                       .format(epoch, i, (time.time() - start_time), loss))
 
-        #drip indices = np.arange(len(val_features))
-        #drip np.random.shuffle(indices)
-        #drip for i in range(len(val_features)):
-        #drip     val_loss = evaluate_sentence(val_features[indices[i]], val_labels[indices[i]], decoder, criterion)
-        #drip     val_losses.append(val_loss)
-
-        val_losses = evaluate(val_features, val_labels, decoder, criterion)
+        # val_losses = evaluate(val_features, val_labels, decoder, criterion)
+        val_losses = evaluate_sentences(val_features, val_labels, decoder, criterion, device, max_length=20)
         print('-' * 89)
 
         print('| epoch {:3d} | ****** | time: {:5.2f}s | train loss {:5.2f} | val loss {:5.2f} '
