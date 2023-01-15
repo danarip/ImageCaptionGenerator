@@ -36,7 +36,7 @@ class DecoderRNN2(nn.Module):
         self.embedding = nn.Embedding(output_size, hidden_size)
         self.gru = nn.GRU(hidden_size, hidden_size)
         self.output_layer = nn.Linear(hidden_size, output_size)
-        self.softmax = nn.LogSoftmax(dim=1)
+        self.logsoftmax = nn.LogSoftmax(dim=2)
 
     def forward(self, labels, features, init):
         batch_size = labels.shape[0]
@@ -51,7 +51,7 @@ class DecoderRNN2(nn.Module):
         output, hidden = self.gru(output, hidden)
         # output: seq length x batch size x hidden size
         output = self.output_layer(output)  #
-        output = self.softmax(output)
+        output = self.logsoftmax(output)
         return output, hidden
 
 
@@ -129,7 +129,7 @@ def train_sentences_non_teacher_forcing(input_tensor, labels_tensor, decoder, op
     loss.backward()
     optimizer.step()
 
-    return loss.item() / (batch_size * (max_length-1))
+    return loss.item() / batch_size
 
 
 def evaluate_sentences(input_tensor, labels_tensor, decoder, criterion, device, max_length):
@@ -138,7 +138,7 @@ def evaluate_sentences(input_tensor, labels_tensor, decoder, criterion, device, 
         batch_size = input_tensor.shape[0]
 
         decoder_hidden = input_tensor.view(1, batch_size, -1).to(device)  # drip
-        decoder_input = labels_tensor[:, 0:1]
+        decoder_input = labels_tensor[:, 0:1].to(device)
 
         for di in range(max_length - 1):
             decoder_output, decoder_hidden = decoder(decoder_input, decoder_hidden, init=di == 0)
@@ -148,7 +148,7 @@ def evaluate_sentences(input_tensor, labels_tensor, decoder, criterion, device, 
             decoder_output = torch.permute(decoder_output, (1, 2, 0))  # drip
             loss += criterion(decoder_output, labels_tensor[:, (di + 1):(di + 2)])
 
-    return loss.item() / (batch_size * (max_length-1))
+    return loss.item() / batch_size
 
 
 def evaluate_sentence(input_tensor, target_tensor, decoder, criterion, device):
@@ -174,18 +174,20 @@ def evaluate_sentence(input_tensor, target_tensor, decoder, criterion, device):
             if decoder_input.item() == EOS_token:
                 break
 
-        return loss.item() / length
+        return loss.item()  # / length
 
 
 def train(train_features, train_labels, val_features, val_labels, decoder, optimizer, criterion,
-          device, epochs, teacher_forcing, learning_rate=0.01, batch_size=128):
+          device, epochs, batch_size):
     log_interval = 10
 
     train_dataset = TensorDataset(train_features, train_labels)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size)
 
-    val_dataset = TensorDataset(val_features, val_labels)
-    val_dataloader = DataLoader(val_dataset, batch_size=batch_size)
+    # val_dataset = TensorDataset(val_features, val_labels)
+    # val_dataloader = DataLoader(val_dataset, batch_size=batch_size)
+    val_features = val_features.to(device)
+    val_labels = val_labels.to(device)
 
     for epoch in range(epochs):
         epoch_start_time = time.time()
@@ -215,16 +217,12 @@ def train(train_features, train_labels, val_features, val_labels, decoder, optim
         val_losses = evaluate_sentences(val_features, val_labels, decoder, criterion, device, max_length=20)
         print('-' * 89)
 
-        print('| epoch {:3d} | ****** | time: {:5.2f}s | train loss {:5.2f} | val loss {:5.2f} '
+        print('| epoch {:3d} | ****** | time: {:5.2f}s | train loss {:5.5f} | val loss {:5.5f} '
               .format(epoch, (time.time() - epoch_start_time), np.mean(train_losses), np.mean(val_losses)))
     print('-' * 89)
 
 
-def evaluate(features, labels, decoder, criterion, device):
-    losses = []
-    indices = np.arange(len(features))
-    np.random.shuffle(indices)
-    for i in range(len(features)):
-        loss = evaluate_sentence(features[indices[i]], labels[indices[i]], decoder, criterion, device)
-        losses.append(loss)
-    return losses
+def evaluate(features, labels, decoder, criterion, device, max_length):
+    labels = labels.to(device)
+    loss = evaluate_sentences(features, labels, decoder, criterion, device, max_length=max_length)
+    return loss

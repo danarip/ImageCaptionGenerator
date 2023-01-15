@@ -91,10 +91,10 @@ else:
 
 
 # hyper parameters
-epochs = 10
-learning_rate = 0.001
+epochs = 1
+learning_rate = 0.01
 feature_size = train_x.shape[1]
-hidden_size = 64
+hidden_size = 256
 output_size = len(vocab)
 
 # device configuration, as before
@@ -109,12 +109,12 @@ optimizer = torch.optim.SGD(decoder.parameters(), lr=learning_rate)
 #drip scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1.0, gamma=0.95)
 
 # train decoder
-networks.train(train_x, train_y, val_x, val_y, decoder, optimizer, criterion, device, epochs, teacher_forcing=True, learning_rate=learning_rate)  # dot
+networks.train(train_x, train_y, val_x, val_y, decoder, optimizer, criterion, device, epochs, batch_size=128)  # dot
 
 # test
 start_time = time.time()
 # test_losses = networks.evaluate(test_x, test_y, decoder, criterion)
-test_losses = networks.evaluate_sentences(test_x, test_y, decoder, criterion, device, max_length=20)
+test_losses = networks.evaluate(test_x, test_y, decoder, criterion, device, max_length=20)
 print('| ********* | ****** | time: {:5.2f}s | test loss {:5.2f}  '
       .format((time.time() - start_time), np.mean(test_losses)))
 print('-' * 89)
