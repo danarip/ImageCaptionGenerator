@@ -49,7 +49,7 @@ def build_vocab(imgs_file, caps_file):
     # build vocab
     train_iter = iter(captions)
     tokenizer = get_tokenizer('basic_english')
-    vocab = build_vocab_from_iterator(map(tokenizer, train_iter), specials=['<unk>', '<sos>', '<eos>']) #drip sos/eos
+    vocab = build_vocab_from_iterator(map(tokenizer, train_iter), specials=['<unk>', '<sos>', '<eos>', '<pad>']) #drip sos/eos
     vocab.set_default_index(vocab['<unk>'])
     return vocab
 
@@ -90,7 +90,7 @@ def create_labels(imgs_file, caps_file, vocab):
     img_names = get_img_names(imgs_file)
     file = file_read(caps_file)
     stoi = vocab.vocab.get_stoi()
-    itos = vocab.vocab.get_itos()
+    #dbg itos = vocab.vocab.get_itos()
 
     img2cap = dict()
     lines = file.split('\n')
@@ -112,11 +112,24 @@ def create_labels(imgs_file, caps_file, vocab):
     return img2cap
 
 
-def create_dataset(names, features, img2cap):
+def create_dataset(names, features, img2cap, vocab, max_len=32):
     x = list()
     y = list()
+    stoi = vocab.vocab.get_stoi()
+
     for i, name in enumerate(names):
         for j in range(5):
             x.append(features[i].view(1, -1))
-            y.append(torch.tensor(img2cap[name][j], dtype=int).view(1, -1))
+
+            # pad
+            caption = img2cap[name][j]
+            if len(caption) >= max_len:
+                caption = caption[:max_len]
+                caption[-1] = stoi['<eos>']
+            else:
+                caption += [stoi['<pad>']] * (max_len - len(caption))
+
+            y.append(torch.tensor(caption, dtype=int).view(1, -1))
+    x = torch.concat(x, dim=0)
+    y = torch.concat(y, dim=0)
     return x, y
