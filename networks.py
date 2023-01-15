@@ -107,7 +107,7 @@ def train_sentences_teacher_forcing(input_tensor, labels_tensor, decoder, optimi
     loss.backward()
     optimizer.step()
 
-    return loss.item() / (batch_size * (max_length-1))
+    return loss.item() / (batch_size * (max_length - 1))
 
 
 def train_sentences_non_teacher_forcing(input_tensor, labels_tensor, decoder, optimizer, criterion, device, max_length):
@@ -124,7 +124,8 @@ def train_sentences_non_teacher_forcing(input_tensor, labels_tensor, decoder, op
         decoder_input = topi.squeeze(0).detach()  # detach from history as input
 
         decoder_output = torch.permute(decoder_output, (1, 2, 0))  # drip
-        loss += criterion(decoder_output, labels_tensor[:, (di + 1):(di + 2)])
+        crit = criterion(decoder_output, labels_tensor[:, (di + 1):(di + 2)])
+        loss += crit
 
     loss.backward()
     optimizer.step()
@@ -178,7 +179,7 @@ def evaluate_sentence(input_tensor, target_tensor, decoder, criterion, device):
 
 
 def train(train_features, train_labels, val_features, val_labels, decoder, optimizer, criterion,
-          device, epochs, batch_size):
+          device, epochs, batch_size, summary_writer):
     log_interval = 10
 
     train_dataset = TensorDataset(train_features, train_labels)
@@ -210,15 +211,18 @@ def train(train_features, train_labels, val_features, val_labels, decoder, optim
             train_losses.append(loss)
 
             if i % log_interval == 0:
-                print('| epoch {:3d} | i {:4d} | time: {:5.2f}s | train loss {:5.5f}'
-                      .format(epoch, i, (time.time() - start_time), loss))
+                print('| epoch {:3d} | i {:4d} | samples: {:6d} | time: {:5.2f}s | train loss {:5.5f}'
+                      .format(epoch, i, i * batch_size, (time.time() - start_time), loss))
 
         # val_losses = evaluate(val_features, val_labels, decoder, criterion)
         val_losses = evaluate_sentences(val_features, val_labels, decoder, criterion, device, max_length=20)
         print('-' * 89)
-
+        epoch_train_loss = np.mean(train_losses) / i
+        epoch_val_loss = np.mean(val_losses)
         print('| epoch {:3d} | ****** | time: {:5.2f}s | train loss {:5.5f} | val loss {:5.5f} '
-              .format(epoch, (time.time() - epoch_start_time), np.mean(train_losses), np.mean(val_losses)))
+              .format(epoch, (time.time() - epoch_start_time), epoch_train_loss, epoch_val_loss))
+        summary_writer.add_scalars("losses", {"train": epoch_train_loss,
+                                              "val": epoch_val_loss}, epoch)
     print('-' * 89)
 
 

@@ -1,9 +1,13 @@
 import os
 import numpy as np
 import time
+from datetime import datetime
+
 import torch
 import torch.utils.data
 import torch.nn as nn
+from torch.utils.tensorboard import SummaryWriter
+
 from torch.utils.data import TensorDataset, DataLoader
 import timm
 import pickle
@@ -91,10 +95,10 @@ else:
 
 
 # hyper parameters
-epochs = 1
-learning_rate = 0.01
+epochs = 100
+learning_rate = 0.001
 feature_size = train_x.shape[1]
-hidden_size = 256
+hidden_size = 64
 output_size = len(vocab)
 
 # device configuration, as before
@@ -108,8 +112,12 @@ criterion = nn.NLLLoss()
 optimizer = torch.optim.SGD(decoder.parameters(), lr=learning_rate)
 #drip scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1.0, gamma=0.95)
 
+summary_writer = SummaryWriter(log_dir=cwd + "/tensorboard/gru/gru_" + datetime.now().strftime("%Y%m%d_%H%M%S"))
+
 # train decoder
-networks.train(train_x, train_y, val_x, val_y, decoder, optimizer, criterion, device, epochs, batch_size=128)  # dot
+networks.train(train_x, train_y, val_x, val_y,
+               decoder, optimizer, criterion,
+               device, epochs, batch_size=256, summary_writer=summary_writer)
 
 # test
 start_time = time.time()
