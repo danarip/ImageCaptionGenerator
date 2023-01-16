@@ -95,29 +95,32 @@ else:
 
 
 # hyper parameters
-epochs = 100
+epochs = 200
+batch_size = 1024
 learning_rate = 0.001
 feature_size = train_x.shape[1]
-hidden_size = 64
+hidden_size = 512
 output_size = len(vocab)
 
 # device configuration, as before
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 # create model, send it to device
-decoder = networks.DecoderRNN2(feature_size, hidden_size, output_size).to(device)  # dot
+decoder = networks.DecoderRNN2(feature_size, hidden_size, output_size, num_layers=3).to(device)  # dot
 
 # loss and optimizer
-criterion = nn.NLLLoss()
-optimizer = torch.optim.SGD(decoder.parameters(), lr=learning_rate)
-#drip scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1.0, gamma=0.95)
+criterion = nn.NLLLoss(reduction="mean")
+#optimizer = torch.optim.SGD(decoder.parameters(), lr=learning_rate)
+optimizer = torch.optim.Adam(decoder.parameters(), lr=learning_rate, weight_decay=0.03)
+#scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1.0, gamma=0.95)
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.1, min_lr=1e-6, verbose=True)
 
 summary_writer = SummaryWriter(log_dir=cwd + "/tensorboard/gru/gru_" + datetime.now().strftime("%Y%m%d_%H%M%S"))
 
 # train decoder
 networks.train(train_x, train_y, val_x, val_y,
-               decoder, optimizer, criterion,
-               device, epochs, batch_size=256, summary_writer=summary_writer)
+               decoder, optimizer, scheduler, criterion,
+               device, epochs, batch_size=batch_size, summary_writer=summary_writer)
 
 # test
 start_time = time.time()
