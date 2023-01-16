@@ -29,12 +29,15 @@ class DecoderRNN2(nn.Module):
     def __init__(self,
                  feature_size,  # 2048
                  hidden_size,  # we decide
-                 output_size):  # Vocabulary size
+                 output_size,  # Vocabulary size
+                 num_layers=1,  # num layers
+                 ):
         super(DecoderRNN2, self).__init__()
+        self.num_layers = num_layers
         self.hidden_size = hidden_size
         self.input = nn.Linear(feature_size, hidden_size)
         self.embedding = nn.Embedding(output_size, hidden_size)
-        self.gru = nn.GRU(hidden_size, hidden_size)
+        self.gru = nn.GRU(hidden_size, hidden_size, num_layers=self.num_layers, dropout=0.5)  # drip
         self.output_layer = nn.Linear(hidden_size, output_size)
         self.logsoftmax = nn.LogSoftmax(dim=2)
 
@@ -44,7 +47,7 @@ class DecoderRNN2(nn.Module):
             hidden = self.input(features)
         else:
             hidden = features
-        hidden = hidden.view(1, batch_size, -1)  # 1 x batch size x hidden size
+        hidden = hidden.view(self.num_layers, batch_size, -1)  # 1 x batch size x hidden size
         output = self.embedding(labels)  # batch size x seq length x representation size
         output = nn.functional.relu(output)
         output = torch.transpose(output, 0, 1)  # seq length x batch size x representation size
@@ -130,7 +133,7 @@ def train_sentences_non_teacher_forcing(input_tensor, labels_tensor, decoder, op
     loss.backward()
     optimizer.step()
 
-    return loss.item() / batch_size
+    return loss.item()
 
 
 def evaluate_sentences(input_tensor, labels_tensor, decoder, criterion, device, max_length):
@@ -147,9 +150,10 @@ def evaluate_sentences(input_tensor, labels_tensor, decoder, criterion, device, 
             decoder_input = topi.squeeze(0).detach()  # detach from history as input
 
             decoder_output = torch.permute(decoder_output, (1, 2, 0))  # drip
-            loss += criterion(decoder_output, labels_tensor[:, (di + 1):(di + 2)])
+            crit = criterion(decoder_output, labels_tensor[:, (di + 1):(di + 2)])
+            loss += crit
 
-    return loss.item() / batch_size
+    return loss.item()
 
 
 def evaluate_sentence(input_tensor, target_tensor, decoder, criterion, device):
@@ -178,7 +182,7 @@ def evaluate_sentence(input_tensor, target_tensor, decoder, criterion, device):
         return loss.item()  # / length
 
 
-def train(train_features, train_labels, val_features, val_labels, decoder, optimizer, criterion,
+def train(train_features, train_labels, val_features, val_labels, decoder, optimizer, scheduler, criterion,
           device, epochs, batch_size, summary_writer):
     log_interval = 10
 
@@ -214,11 +218,16 @@ def train(train_features, train_labels, val_features, val_labels, decoder, optim
                 print('| epoch {:3d} | i {:4d} | samples: {:6d} | time: {:5.2f}s | train loss {:5.5f}'
                       .format(epoch, i, i * batch_size, (time.time() - start_time), loss))
 
+        #scheduler.step()
+
+
         # val_losses = evaluate(val_features, val_labels, decoder, criterion)
-        val_losses = evaluate_sentences(val_features, val_labels, decoder, criterion, device, max_length=20)
+        epoch_val_loss = evaluate_sentences(val_features, val_labels, decoder, criterion, device, max_length=20)
+
+        epoch_train_loss = np.mean(train_losses)
+        scheduler.step(np.mean(epoch_train_loss))
+
         print('-' * 89)
-        epoch_train_loss = np.mean(train_losses) / i
-        epoch_val_loss = np.mean(val_losses)
         print('| epoch {:3d} | ****** | time: {:5.2f}s | train loss {:5.5f} | val loss {:5.5f} '
               .format(epoch, (time.time() - epoch_start_time), epoch_train_loss, epoch_val_loss))
         summary_writer.add_scalars("losses", {"train": epoch_train_loss,
