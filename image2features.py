@@ -54,6 +54,33 @@ def build_vocab(imgs_file, caps_file):
     return vocab
 
 
+def show_image(dataset_dir, imgs_file, img2cap, img2pred, tb, vocab, n=5, start_index=0):
+    img_names = get_img_names(imgs_file)
+    itos = vocab.vocab.get_itos()
+    for i in range(start_index, start_index + n):
+        img = img_names[i]
+        filename = dataset_dir + "/" + img
+        transform = transforms.Compose([
+            transforms.Resize((100, 100)),
+            transforms.ToTensor()])
+        image = Image.open(filename).convert('RGB')
+        tensor = transform(image)
+
+        caption = " ".join([itos[x] for x in img2cap[img][0]])
+        pred = " ".join([itos[x] for x in img2pred[img]])
+        tb.add_image(caption + " " + pred, tensor)
+
+
+def create_pred_labels(imgs_file, captions_pred):
+    img_names = get_img_names(imgs_file)
+    img2pred = dict()
+    for i, img_name in enumerate(img_names):
+        if img_name not in img2pred:
+            img2pred[img_name] = captions_pred[i*5]
+
+    return img2pred
+
+
 def extract_features(model, dataset_dir, imgs_file, img_size=(299, 299), batch_size=2):
     img_names = get_img_names(imgs_file)
 

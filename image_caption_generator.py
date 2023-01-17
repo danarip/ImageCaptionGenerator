@@ -93,39 +93,49 @@ if not os.path.exists(test_ds_file):
 else:
     test_x, test_y = pickle.load(open(test_ds_file, 'rb'))
 
+# Run tensorboard
+summary_writer = SummaryWriter(log_dir=cwd + "/tensorboard/gru_images/image_" + datetime.now().strftime("%Y%m%d_%H%M%S"))
 
 # hyper parameters
-epochs = 200
-batch_size = 1024
+epochs = 1
+batch_size = 128
 learning_rate = 0.001
 feature_size = train_x.shape[1]
-hidden_size = 512
+hidden_size = 256
 output_size = len(vocab)
 
 # device configuration, as before
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 # create model, send it to device
-decoder = networks.DecoderRNN2(feature_size, hidden_size, output_size, num_layers=3).to(device)  # dot
+decoder = networks.DecoderRNN2(feature_size, hidden_size, output_size, num_layers=1).to(device)  # dot
 
 # loss and optimizer
 criterion = nn.NLLLoss(reduction="mean")
 #optimizer = torch.optim.SGD(decoder.parameters(), lr=learning_rate)
 optimizer = torch.optim.Adam(decoder.parameters(), lr=learning_rate, weight_decay=0.03)
-#scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1.0, gamma=0.95)
-scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.1, min_lr=1e-6, verbose=True)
+scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1.0, gamma=0.95)
+#scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.1, min_lr=1e-6, verbose=True)
 
-summary_writer = SummaryWriter(log_dir=cwd + "/tensorboard/gru/gru_" + datetime.now().strftime("%Y%m%d_%H%M%S"))
 
 # train decoder
 networks.train(train_x, train_y, val_x, val_y,
                decoder, optimizer, scheduler, criterion,
                device, epochs, batch_size=batch_size, summary_writer=summary_writer)
 
+
+# drip
+
+val_img2cap = image2features.create_labels(val_images_file, token_file, vocab)
+_, val_labels_pred = networks.evaluate(val_x, val_y, decoder, criterion, device, max_length=20)
+val_img2pred = image2features.create_pred_labels(val_images_file, val_labels_pred)
+image2features.show_image(dataset_dir, val_images_file, val_img2cap, val_img2pred, summary_writer, vocab, start_index=100)
+
+
 # test
 start_time = time.time()
 # test_losses = networks.evaluate(test_x, test_y, decoder, criterion)
-test_losses = networks.evaluate(test_x, test_y, decoder, criterion, device, max_length=20)
+test_losses, test_labels_pred = networks.evaluate(test_x, test_y, decoder, criterion, device, max_length=20)
 print('| ********* | ****** | time: {:5.2f}s | test loss {:5.2f}  '
       .format((time.time() - start_time), np.mean(test_losses)))
 print('-' * 89)
