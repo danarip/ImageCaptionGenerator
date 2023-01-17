@@ -50,9 +50,6 @@ class Attention(nn.Module):
         return alpha, attention_weights
 
 
-# In[27]:
-
-
 # Attention Decoder
 class DecoderRNN(nn.Module):
     def __init__(self, embed_size, vocab_size, attention_dim, encoder_dim, decoder_dim, device, drop_prob=0.3):

@@ -1,6 +1,13 @@
 '''
 Taken from: https://www.kaggle.com/code/mdteach/torch-data-loader-flicker-8k/notebook
 and from: https://www.kaggle.com/code/mdteach/image-captioning-with-attention-pytorch
+
+Attention type: Neural Machine Translation by Jointly Learning to Align and Translate (ICLR 2015)
+By: Dzmitry Bahdanau, Kyunghyun Cho, Yoshua Bengio: https://arxiv.org/abs/1409.0473
+Blog to explain the attention mechanism: https://machinelearningmastery.com/the-bahdanau-attention-mechanism
+
+CNN-Transformer Architecture
+https://github.com/senadkurtisi/pytorch-image-captioning
 '''
 from datetime import datetime
 import time
