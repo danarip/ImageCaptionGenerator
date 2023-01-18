@@ -78,7 +78,7 @@ class DecoderRNN(nn.Module):
         embeds = self.embedding(captions)
 
         # Initialize LSTM state
-        h, c = self.init_hidden_state(features)  # (batch_size, decoder_dim)
+        h, c = self.init_hidden_state(features)  # h, c=1024x512=(batch_size, decoder_dim)
 
         # get the seq length to iterate
         seq_length = len(captions[0]) - 1  # Exclude the last one
@@ -89,13 +89,13 @@ class DecoderRNN(nn.Module):
         alphas = torch.zeros(batch_size, seq_length, num_features).to(self.device)
 
         for s in range(seq_length):
-            alpha, context = self.attention(features, h)
+            alpha, context = self.attention(features, h)  # features: 1024x49x2048, h: 1024x512, context:1024x2048, alpha:1024x49
             lstm_input = torch.cat((embeds[:, s], context), dim=1)
             h, c = self.lstm_cell(lstm_input, (h, c))
 
-            output = self.fcn(self.drop(h))
+            output = self.fcn(self.drop(h))  # 1024 x 2994 = batch x vocab_size
 
-            preds[:, s] = output
+            preds[:, s] = output  # 1024 x 29 x 2994 = batch x (seq_len-1) x vocab_size
             alphas[:, s] = alpha
 
         return preds, alphas
@@ -142,7 +142,9 @@ class DecoderRNN(nn.Module):
         # covert the vocab idx to words and return sentence
         return [vocab.itos[idx] for idx in captions], alphas
 
-    def init_hidden_state(self, encoder_out):
+    def init_hidden_state(self,
+                          encoder_out  # 1024 x 49 x 2048 <> Batch x square_resnet x rep length
+                          ):
         mean_encoder_out = encoder_out.mean(dim=1)
         h = self.init_h(mean_encoder_out)  # (batch_size, decoder_dim)
         c = self.init_c(mean_encoder_out)
