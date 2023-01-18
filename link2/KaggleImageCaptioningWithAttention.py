@@ -102,7 +102,8 @@ model = EncoderDecoder(
     device=device
 )
 
-model = nn.DataParallel(model, device_ids=[0, 1]).to(device)
+model = model.to(device)
+#model = nn.DataParallel(model, device_ids=[0, 1]).to(device)
 
 criterion = nn.CrossEntropyLoss(ignore_index=dataset.vocab.stoi["<PAD>"])
 optimizer = optim.Adam(model.parameters(), lr=learning_rate)
@@ -147,8 +148,8 @@ for epoch in range(num_epochs):
                 for _ in range(num_of_pics_to_show):
                     dataiter = iter(data_loader)
                     img, _ = next(dataiter)
-                    features = model.module.encoder(img[0:1].to(device))
-                    caps, alphas = model.module.decoder.generate_caption(features, vocab=dataset.vocab)
+                    features = model.module.encoder(img[0:1].to(device))  # drip: added module for parallelization
+                    caps, alphas = model.module.decoder.generate_caption(features, vocab=dataset.vocab)  # drip: added module for parallelization
                     caption = ' '.join(caps)
                     show_image(img[0], title=s + ":" + caption, tb=tb)
 
