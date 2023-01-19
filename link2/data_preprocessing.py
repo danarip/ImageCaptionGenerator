@@ -106,9 +106,10 @@ class CapsCollate:
     Collate to apply the padding to the captions with dataloader
     """
 
-    def __init__(self, pad_idx, batch_first=False):
+    def __init__(self, pad_idx, batch_first=False, max_len=0):
         self.pad_idx = pad_idx
         self.batch_first = batch_first
+        self._max_len = max_len
 
     def __call__(self, batch):
         imgs = [item[0].unsqueeze(0) for item in batch]
@@ -116,4 +117,11 @@ class CapsCollate:
 
         targets = [item[1] for item in batch]
         targets = pad_sequence(targets, batch_first=self.batch_first, padding_value=self.pad_idx)
+        if self._max_len > 0:
+            if targets.shape[1] >= self._max_len:
+                targets = targets[:, :self._max_len]
+            else:
+                pad_tensor = torch.ones(size=(targets.shape[0], self._max_len - targets.shape[1]), dtype=torch.long) * self.pad_idx
+                targets = torch.cat([targets, pad_tensor], dim=1)
+
         return imgs, targets
