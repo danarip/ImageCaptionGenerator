@@ -54,7 +54,7 @@ class FlickrDataset(Dataset):
     FlickrDataset
     """
 
-    def __init__(self, root_dir, captions_file, transform=None, freq_threshold=5):
+    def __init__(self, root_dir, captions_file, transform=None, freq_threshold=5, vocab=None):
         self.root_dir = root_dir
         self.df = pd.read_csv(captions_file)
         self.transform = transform
@@ -64,8 +64,11 @@ class FlickrDataset(Dataset):
         self.captions = self.df["caption"]
 
         # Initialize vocabulary and build vocab
-        self.vocab = Vocabulary(freq_threshold)
-        self.vocab.build_vocab(self.captions.tolist())
+        if vocab is None:
+            self.vocab = Vocabulary(freq_threshold)
+            self.vocab.build_vocab(self.captions.tolist())
+        else:
+            self.vocab = vocab
 
     def __len__(self):
         return len(self.df)

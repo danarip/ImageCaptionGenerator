@@ -21,17 +21,29 @@ from torch.utils.tensorboard import SummaryWriter
 
 from root import cwd
 from link2.data_preprocessing import FlickrDataset, CapsCollate
-from link2.utils import show_image, plot_attention, save_model
+from link2.utils import show_image, plot_attention
 from link2.networks import EncoderDecoderLSTM
+from link2.decoder import EncoderDecoderTransformer
 
-# locations of the training / validation data
-data_train_images_path = f"{cwd}/data/flickr8k/Flickr8kTrainImages/"
-data_train_captions = f"{cwd}/data/flickr8k/captions_train.txt"
-data_validation_images_path = f"{cwd}/data/flickr8k/Flickr8kTrainImages/"
-data_validation_captions = f"{cwd}/data/flickr8k/captions_train.txt"
-
+# location of the training data
+data_location = f"{cwd}/data/flickr8k"
 id_run = datetime.now().strftime("%Y%m%d_%H%M%S")
 tb = SummaryWriter(log_dir=cwd + "/tensorboard/link2/images_" + id_run)
+
+
+# helper function to save the model
+def save_model(model2save, num_epochs, id_for_save):
+    model_state = {
+        'num_epochs': num_epochs,
+        'embed_size': embed_size,
+        'vocab_size': len(dataset.vocab),
+        'attention_dim': attention_dim,
+        'encoder_dim': encoder_dim,
+        'decoder_dim': decoder_dim,
+        'state_dict': model2save.state_dict()
+    }
+    torch.save(model_state, f"{cwd}/models/attention_model_state_{id_for_save}.pth")
+
 
 # Initiate the Dataset and Dataloader
 # setting the constants
@@ -46,20 +58,20 @@ transforms = T.Compose([
     T.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
 ])
 
-# Train dataset and dataloader
-dataset_train = FlickrDataset(root_dir=data_train_images_path, captions_file=data_train_captions, transform=transforms)
-pad_idx = dataset_train.vocab.stoi["<PAD>"]
-data_loader_train = DataLoader(dataset=dataset_train, batch_size=BATCH_SIZE, num_workers=NUM_WORKER, shuffle=True,
-                               collate_fn=CapsCollate(pad_idx=pad_idx, batch_first=True))
+# testing the dataset class
+dataset = FlickrDataset(root_dir=data_location + "/Images/", captions_file=data_location + "/captions.txt",
+                        transform=transforms)
 
-# Validation dataset and dataloader
-dataset_validation = FlickrDataset(root_dir=data_validation_images_path, captions_file=data_validation_captions,
-                                   transform=transforms, vocab=dataset_train.vocab)
-data_loader_validation = DataLoader(dataset=dataset_validation, batch_size=BATCH_SIZE, num_workers=NUM_WORKER,
-                                    shuffle=True, collate_fn=CapsCollate(pad_idx=pad_idx, batch_first=True))
+# writing the dataloader
+pad_idx = dataset.vocab.stoi["<PAD>"]
+data_loader = DataLoader(dataset=dataset,
+                         batch_size=BATCH_SIZE,
+                         num_workers=NUM_WORKER,
+                         shuffle=True,
+                         collate_fn=CapsCollate(pad_idx=pad_idx, batch_first=True))
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-print(f"device to rune on {device}")
+print(device)
 
 # 3) Defining the Model Architecture
 """
@@ -71,47 +83,63 @@ In the decoder model **LSTM cell**.
 
 # Hyperparams
 embed_size = 256
-vocab_size = len(dataset_train.vocab)
+vocab_size = len(dataset.vocab)
 attention_dim = 256
 encoder_dim = 2048
 decoder_dim = 256
 learning_rate = 3e-4
-model = EncoderDecoderLSTM(
+seq_len = 20
+num_decoder_layers = 2
+image_dimension = 2048
+nhead = 4
+d_model = 2048
+dim_feedforward = 2048
+dropout = 0.3
+model = EncoderDecoderTransformer(
+    image_dimension=image_dimension,
     embed_size=embed_size,
     vocab_size=vocab_size,
-    attention_dim=attention_dim,
-    encoder_dim=encoder_dim,
-    decoder_dim=decoder_dim,
-    device=device)
+    seq_len=seq_len,
+    num_decoder_layers=num_decoder_layers,  # TransformerDecoder: the number of sub-decoder-layers in the decoder
+    d_model=d_model,  # TransformerDecoderLayer: the number of expected features in the input
+    nhead=nhead,  # TransformerDecoderLayer: the number of heads in the multiheadattention models
+    dim_feedforward=dim_feedforward,
+    # TransformerDecoderLayer: the dimension of the feedforward network model (default=2048).
+    device=device,
+    dropout=dropout
+)
 
 model = model.to(device)
 # model = nn.DataParallel(model, device_ids=[0, 1]).to(device)
 
-criterion = nn.CrossEntropyLoss(ignore_index=dataset_train.vocab.stoi["<PAD>"])
+criterion = nn.CrossEntropyLoss(ignore_index=dataset.vocab.stoi["<PAD>"])
 optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
 # 5) Training Job from above configs
 num_epochs = 100
 print_every = 5
-save_every_epochs = 10
-num_batches = len(data_loader_train)
+num_batches = len(data_loader)
 num_of_pics_to_show = 3
 
 time_start_training = time.time()
 for epoch in range(num_epochs):
     time_start_epoch = time.time()
-    for idx, (image, captions) in enumerate(data_loader_train):
+    for idx, (image, captions) in enumerate(data_loader):
         image, captions = image.to(device), captions.to(device)
+        print(f"{captions.shape[1]}")
+        captions = captions[:, :seq_len-1]
+        print(f"{captions.shape[1]}")
 
         # Zero the gradients.
         optimizer.zero_grad()
 
         # Feed forward
         outputs, attentions = model(image, captions)
+        outputs = outputs[:, :-1]
 
         # Calculate the batch loss.
         targets = captions[:, 1:]
-        loss = criterion(outputs.view(-1, vocab_size), targets.reshape(-1))
+        loss = criterion(outputs.contiguous().view(-1, vocab_size), targets.reshape(-1))
 
         # Backward pass.
         loss.backward()
@@ -128,11 +156,8 @@ for epoch in range(num_epochs):
             model.eval()
             with torch.no_grad():
                 for _ in range(num_of_pics_to_show):
-                    dataiter = iter(data_loader_validation)
-                    img, _ = next(dataiter)
-                    features = model.encoder(img[0:1].to(device))  # drip: added module for parallelization
-                    caps, alphas = model.decoder.generate_caption(features,
-                                                                  vocab=dataset_train.vocab)  # drip: added module for parallelization
+                    dataiter = iter(data_loader)
+                    img, pred_caption = next(dataiter)
                     caption = ' '.join(caps)
                     show_image(img[0], title=s + ":" + caption, tb=tb)
 
@@ -143,9 +168,7 @@ for epoch in range(num_epochs):
     print(f"expected total time {expected_time:.2f}")
 
     # save the latest model
-    if epoch % save_every_epochs == 0 or epoch == num_epochs - 1:
-        save_model(model, epoch, embed_size, vocab_size, attention_dim, encoder_dim, decoder_dim,
-                   f"{id_run}_{epoch:03d}")
+    save_model(model, epoch, f"{id_run}_{epoch:03d}")
 
 
 # ## 6 Visualizing the attentions
@@ -158,7 +181,7 @@ def get_caps_from(features_tensors):
     model.eval()
     with torch.no_grad():
         features = model.encoder(features_tensors.to(device))
-        caps, alphas = model.decoder.generate_caption(features, vocab=dataset_train.vocab)
+        caps, alphas = model.decoder.generate_caption(features, vocab=dataset.vocab)
         caption = ' '.join(caps)
         show_image(features_tensors[0], title=caption)
 
@@ -169,7 +192,7 @@ def get_caps_from(features_tensors):
 
 
 # show any 1
-dataiter = iter(data_loader_validation)
+dataiter = iter(data_loader)
 images, _ = next(dataiter)
 
 img = images[0].detach().clone()
@@ -182,7 +205,20 @@ plot_attention(img1, caps, alphas)
 
 
 # show any 1
-dataiter = iter(data_loader_validation)
+dataiter = iter(data_loader)
+images, _ = next(dataiter)
+
+img = images[0].detach().clone()
+img1 = images[0].detach().clone()
+caps, alphas = get_caps_from(img.unsqueeze(0))
+
+plot_attention(img1, caps, alphas)
+
+# In[ ]:
+
+
+# show any 1
+dataiter = iter(data_loader)
 images, _ = next(dataiter)
 
 img = images[0].detach().clone()
@@ -192,17 +228,7 @@ caps, alphas = get_caps_from(img.unsqueeze(0))
 plot_attention(img1, caps, alphas)
 
 # show any 1
-dataiter = iter(data_loader_validation)
-images, _ = next(dataiter)
-
-img = images[0].detach().clone()
-img1 = images[0].detach().clone()
-caps, alphas = get_caps_from(img.unsqueeze(0))
-
-plot_attention(img1, caps, alphas)
-
-# show any 1
-dataiter = iter(data_loader_validation)
+dataiter = iter(data_loader)
 images, _ = next(dataiter)
 
 img = images[0].detach().clone()
