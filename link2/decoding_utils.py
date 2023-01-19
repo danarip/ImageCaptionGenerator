@@ -1,5 +1,13 @@
-import torch
 import numpy as np
+
+import torch
+from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
+
+from link2.utils import show_image
+from link2.data_preprocessing import FlickrDataset, CapsCollate
+from link2.data_preprocessing import transforms
+from definitions import cwd
 
 
 def greedy_decoding(model, img_batched, sos_id, eos_id, pad_id, idx2word, max_len, device):
@@ -70,3 +78,71 @@ def greedy_decoding(model, img_batched, sos_id, eos_id, pad_id, idx2word, max_le
         caption.remove(idx2word[eos_id])
 
     return generated_captions
+
+
+def show_transformer_validation(model,
+                                data_loader_validation,
+                                tb,
+                                device,
+                                sos_idx,
+                                eos_idx,
+                                pad_idx,
+                                idx2word,
+                                max_len,
+                                batch_size_val
+                                ):
+    model.eval()
+    with torch.no_grad():
+        dataiter = iter(data_loader_validation)
+        img, pred_caption = next(dataiter)
+        img, pred_caption = img.to(device), pred_caption.to(device)
+        # greedy_decoding(model, img_features_batched, sos_id, eos_id, pad_id, idx2word, max_len, device):
+        captions_pred_batch = greedy_decoding(model, img, sos_idx, eos_idx, pad_idx, idx2word, max_len=max_len - 1,
+                                              device=device)
+        captions_pred_batch = captions_pred_batch[:batch_size_val]
+
+        for i, caption in enumerate(captions_pred_batch):
+            caption = ' '.join(caption)
+            show_image(img[i], title=f"{i}:{caption}", tb=tb)
+
+
+def show_network(model_path=f"{cwd}/models/attention_model_state_20230119_191102_090.pth",
+                 batch_size_val=20,
+                 seq_len=30):
+    model = torch.load(model_path)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print(f"device to rune on {device}")
+    data_train_images_path = f"{cwd}/data/flickr8k/Flickr8kTrainImages/"
+    data_train_captions = f"{cwd}/data/flickr8k/captions_train.txt"
+    data_validation_images_path = f"{cwd}/data/flickr8k/Flickr8kTrainImages/"
+    data_validation_captions = f"{cwd}/data/flickr8k/captions_train.txt"
+    dataset_train = FlickrDataset(root_dir=data_train_images_path, captions_file=data_train_captions,
+                                  transform=transforms)
+    pad_idx = dataset_train.vocab.stoi["<PAD>"]
+    sos_idx = dataset_train.vocab.stoi["<SOS>"]
+    eos_idx = dataset_train.vocab.stoi["<EOS>"]
+    idx2word = dataset_train.vocab.itos
+
+    id_run = model_path.split("/")[-1]
+    tb = SummaryWriter(log_dir=cwd + "/tensorboard/link2/transformers_val_" + id_run)
+
+    # Validation dataset and dataloader
+    dataset_validation = FlickrDataset(root_dir=data_validation_images_path, captions_file=data_validation_captions,
+                                       transform=transforms, vocab=dataset_train.vocab)
+    data_loader_validation = DataLoader(dataset=dataset_validation, batch_size=batch_size_val, num_workers=1,
+                                        shuffle=True, collate_fn=CapsCollate(pad_idx=pad_idx, batch_first=True,
+                                                                             max_len=seq_len))
+    show_transformer_validation(model,
+                                data_loader_validation,
+                                tb,
+                                device,
+                                sos_idx,
+                                eos_idx,
+                                pad_idx,
+                                idx2word,
+                                seq_len,
+                                batch_size_val)
+
+
+if __name__ == "__main__":
+    show_network()

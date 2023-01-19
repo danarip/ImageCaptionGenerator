@@ -36,7 +36,7 @@ tb = SummaryWriter(log_dir=cwd + "/tensorboard/link2/transformers_images_" + id_
 
 # Initiate the Dataset and Dataloader
 # setting the constants
-BATCH_SIZE = 512
+BATCH_SIZE = 256
 BATCH_SIZE_VAL = 10
 NUM_WORKER = 4
 seq_len = 30
@@ -75,10 +75,10 @@ vocab_size = len(dataset_train.vocab)
 attention_dim = 256
 encoder_dim = 256
 decoder_dim = 256
-learning_rate = 3e-4
-num_decoder_layers = 2
+learning_rate = 1e-4
+num_decoder_layers = 4
 image_dimension = 2048
-nhead = 4
+nhead = 8
 d_model = 2048
 dim_feedforward = 512
 dropout = 0.3
@@ -114,7 +114,7 @@ for epoch in range(num_epochs):
     for idx, (image, captions) in enumerate(data_loader_train):
         image, captions = image.to(device), captions.to(device)
         captions = captions[:, 1:]
-        print(f"{captions.shape[1]}")
+        # print(f"{captions.shape[1]}")
 
         # Zero the gradients.
         optimizer.zero_grad()
@@ -129,7 +129,9 @@ for epoch in range(num_epochs):
 
         # Backward pass.
         loss.backward()
-        tb.add_scalar("loss", loss.item(), epoch + idx / num_batches)
+        time_of_loss = epoch + idx / num_batches
+        print(f"time of loss={time_of_loss}")
+        tb.add_scalar("loss", loss.item(), time_of_loss)
 
         # Update the parameters in the optimizer.
         optimizer.step()
