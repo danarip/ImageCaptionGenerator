@@ -1,13 +1,6 @@
 '''
-Taken from: https://www.kaggle.com/code/mdteach/torch-data-loader-flicker-8k/notebook
-and from: https://www.kaggle.com/code/mdteach/image-captioning-with-attention-pytorch
-
-Attention type: Neural Machine Translation by Jointly Learning to Align and Translate (ICLR 2015)
-By: Dzmitry Bahdanau, Kyunghyun Cho, Yoshua Bengio: https://arxiv.org/abs/1409.0473
-Blog to explain the attention mechanism: https://machinelearningmastery.com/the-bahdanau-attention-mechanism
-
-CNN-SamLynnEvans Architecture
-https://github.com/senadkurtisi/pytorch-image-captioning
+Nice Transformer Image Caption Diagram:
+https://heartbeat.comet.ml/caption-your-images-with-a-cnn-transformer-hybrid-model-a980f437da7b
 '''
 from datetime import datetime
 import time
@@ -21,8 +14,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from root import cwd
 from link2.data_preprocessing import FlickrDataset, CapsCollate
-from link2.utils import show_image, plot_attention
-from link2.networks import EncoderDecoderLSTM
+from link2.utils import show_image
 from link2.decoder import EncoderDecoderTransformer
 
 # location of the training data
@@ -170,69 +162,3 @@ for epoch in range(num_epochs):
     # save the latest model
     save_model(model, epoch, f"{id_run}_{epoch:03d}")
 
-
-# ## 6 Visualizing the attentions
-# Defining helper functions
-# Given the image generate captions and attention scores. Plot the attention scores in the image
-
-# generate caption
-def get_caps_from(features_tensors):
-    # generate the caption
-    model.eval()
-    with torch.no_grad():
-        features = model.encoder(features_tensors.to(device))
-        caps, alphas = model.decoder.generate_caption(features, vocab=dataset.vocab)
-        caption = ' '.join(caps)
-        show_image(features_tensors[0], title=caption)
-
-    return caps, alphas
-
-
-# Show attention
-
-
-# show any 1
-dataiter = iter(data_loader)
-images, _ = next(dataiter)
-
-img = images[0].detach().clone()
-img1 = images[0].detach().clone()
-caps, alphas = get_caps_from(img.unsqueeze(0))
-
-plot_attention(img1, caps, alphas)
-
-# In[ ]:
-
-
-# show any 1
-dataiter = iter(data_loader)
-images, _ = next(dataiter)
-
-img = images[0].detach().clone()
-img1 = images[0].detach().clone()
-caps, alphas = get_caps_from(img.unsqueeze(0))
-
-plot_attention(img1, caps, alphas)
-
-# In[ ]:
-
-
-# show any 1
-dataiter = iter(data_loader)
-images, _ = next(dataiter)
-
-img = images[0].detach().clone()
-img1 = images[0].detach().clone()
-caps, alphas = get_caps_from(img.unsqueeze(0))
-
-plot_attention(img1, caps, alphas)
-
-# show any 1
-dataiter = iter(data_loader)
-images, _ = next(dataiter)
-
-img = images[0].detach().clone()
-img1 = images[0].detach().clone()
-caps, alphas = get_caps_from(img.unsqueeze(0))
-
-plot_attention(img1, caps, alphas)
