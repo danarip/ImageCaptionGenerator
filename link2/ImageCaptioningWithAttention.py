@@ -21,7 +21,7 @@ from torch.utils.tensorboard import SummaryWriter
 from root import cwd
 from link2.data_preprocessing import FlickrDataset, CapsCollate
 from link2.utils import show_image
-from link2.networks import EncoderDecoderLSTM
+from link2.networks_lstm import EncoderDecoderLSTM
 from link2.data_preprocessing import transforms
 
 # locations of the training / validation data

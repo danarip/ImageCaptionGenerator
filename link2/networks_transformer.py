@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import TransformerDecoderLayer, TransformerDecoder
 
-from link2.networks import EncoderCNN
+from link2.networks_lstm import EncoderCNN
 
 
 class ResidualBlock(nn.Module):
@@ -165,12 +165,12 @@ class EncoderDecoderTransformer(nn.Module):
             dropout=dropout
         )
 
-    def forward(self, images, captions):
+    def forward(self, images, captions, tgt_padding_mask=None, tgt_mask=None):
         features = self.encoder(images)
 
         # Transformation for connecting encoder to the decoder
         # features = features.mean(dim=1)
         features = features.permute(1, 0, 2)
 
-        outputs = self.decoder(features, captions)
-        return outputs, 0
+        outputs = self.decoder(features, captions, tgt_padding_mask, tgt_mask)
+        return outputs

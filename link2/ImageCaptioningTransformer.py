@@ -21,8 +21,9 @@ from torch.utils.tensorboard import SummaryWriter
 from root import cwd
 from link2.data_preprocessing import FlickrDataset, CapsCollate
 from link2.utils import show_image
-from link2.networks import En
+from link2.networks_transformer import EncoderDecoderTransformer
 from link2.data_preprocessing import transforms
+from link2.decoding_utils import greedy_decoding
 
 # locations of the training / validation data
 data_train_images_path = f"{cwd}/data/flickr8k/Flickr8kTrainImages/"
@@ -31,24 +32,31 @@ data_validation_images_path = f"{cwd}/data/flickr8k/Flickr8kTrainImages/"
 data_validation_captions = f"{cwd}/data/flickr8k/captions_train.txt"
 
 id_run = datetime.now().strftime("%Y%m%d_%H%M%S")
-tb = SummaryWriter(log_dir=cwd + "/tensorboard/link2/images_" + id_run)
+tb = SummaryWriter(log_dir=cwd + "/tensorboard/link2/transformers_images_" + id_run)
 
 # Initiate the Dataset and Dataloader
 # setting the constants
-BATCH_SIZE = 1024
+BATCH_SIZE = 512
+BATCH_SIZE_VAL = 10
 NUM_WORKER = 4
+seq_len = 30
 
 # Train dataset and dataloader
 dataset_train = FlickrDataset(root_dir=data_train_images_path, captions_file=data_train_captions, transform=transforms)
 pad_idx = dataset_train.vocab.stoi["<PAD>"]
+sos_idx = dataset_train.vocab.stoi["<SOS>"]
+eos_idx = dataset_train.vocab.stoi["<EOS>"]
+idx2word = dataset_train.vocab.itos
 data_loader_train = DataLoader(dataset=dataset_train, batch_size=BATCH_SIZE, num_workers=NUM_WORKER, shuffle=True,
-                               collate_fn=CapsCollate(pad_idx=pad_idx, batch_first=True))
+                               collate_fn=CapsCollate(pad_idx=pad_idx, batch_first=True,
+                                                      max_len=seq_len))
 
 # Validation dataset and dataloader
 dataset_validation = FlickrDataset(root_dir=data_validation_images_path, captions_file=data_validation_captions,
                                    transform=transforms, vocab=dataset_train.vocab)
 data_loader_validation = DataLoader(dataset=dataset_validation, batch_size=BATCH_SIZE, num_workers=NUM_WORKER,
-                                    shuffle=True, collate_fn=CapsCollate(pad_idx=pad_idx, batch_first=True))
+                                    shuffle=True, collate_fn=CapsCollate(pad_idx=pad_idx, batch_first=True,
+                                                                         max_len=seq_len))
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(f"device to rune on {device}")
@@ -63,17 +71,16 @@ In the decoder model **LSTM cell**.
 
 # Hyperparams
 embed_size = 256
-vocab_size = len(dataset.vocab)
+vocab_size = len(dataset_train.vocab)
 attention_dim = 256
-encoder_dim = 2048
+encoder_dim = 256
 decoder_dim = 256
 learning_rate = 3e-4
-seq_len = 20
 num_decoder_layers = 2
 image_dimension = 2048
 nhead = 4
 d_model = 2048
-dim_feedforward = 2048
+dim_feedforward = 512
 dropout = 0.3
 model = EncoderDecoderTransformer(
     image_dimension=image_dimension,
@@ -90,7 +97,6 @@ model = EncoderDecoderTransformer(
 )
 
 model = model.to(device)
-# model = nn.DataParallel(model, device_ids=[0, 1]).to(device)
 
 criterion = nn.CrossEntropyLoss(ignore_index=dataset_train.vocab.stoi["<PAD>"])
 optimizer = optim.Adam(model.parameters(), lr=learning_rate)
@@ -107,16 +113,19 @@ for epoch in range(num_epochs):
     time_start_epoch = time.time()
     for idx, (image, captions) in enumerate(data_loader_train):
         image, captions = image.to(device), captions.to(device)
+        captions = captions[:, 1:]
+        print(f"{captions.shape[1]}")
 
         # Zero the gradients.
         optimizer.zero_grad()
 
         # Feed forward
-        outputs, attentions = model(image, captions)
+        outputs = model(image, captions)
+        outputs = outputs[:, :-1]
 
         # Calculate the batch loss.
         targets = captions[:, 1:]
-        loss = criterion(outputs.view(-1, vocab_size), targets.reshape(-1))
+        loss = criterion(outputs.contiguous().view(-1, vocab_size), targets.reshape(-1))
 
         # Backward pass.
         loss.backward()
@@ -132,14 +141,16 @@ for epoch in range(num_epochs):
             # generate the caption
             model.eval()
             with torch.no_grad():
-                for _ in range(num_of_pics_to_show):
-                    dataiter = iter(data_loader_validation)
-                    img, _ = next(dataiter)
-                    features = model.encoder(img[0:1].to(device))  # drip: added module for parallelization
-                    caps, alphas = model.decoder.generate_caption(features,
-                                                                  vocab=dataset_train.vocab)  # drip: added module for parallelization
-                    caption = ' '.join(caps)
-                    show_image(img[0], title=s + ":" + caption, tb=tb)
+                dataiter = iter(data_loader_validation)
+                img, pred_caption = next(dataiter)
+                img, pred_caption = img.to(device), pred_caption.to(device)
+                # greedy_decoding(model, img_features_batched, sos_id, eos_id, pad_id, idx2word, max_len, device):
+                captions_pred_batch = greedy_decoding(model, img, sos_idx, eos_idx, pad_idx, idx2word, max_len=seq_len-1, device=device)
+                captions_pred_batch = captions_pred_batch[:BATCH_SIZE_VAL]
+
+                for i, caption in enumerate(captions_pred_batch):
+                    caption = ' '.join(caption)
+                    show_image(img[i], title=s + ":" + caption, tb=tb)
 
             model.train()
     time_from_training_start = (time.time() - time_start_training)
@@ -148,7 +159,6 @@ for epoch in range(num_epochs):
     print(f"expected total time {expected_time:.2f}")
 
     # save the latest model
+    # save the latest model
     if epoch % save_every_epochs == 0 or epoch == num_epochs - 1:
         torch.save(model, f"{cwd}/models/attention_model_state_{id_run}_{epoch:03d}.pth")
-
-
