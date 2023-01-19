@@ -16,13 +16,13 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-import torchvision.transforms as T
 from torch.utils.tensorboard import SummaryWriter
 
 from root import cwd
 from link2.data_preprocessing import FlickrDataset, CapsCollate
 from link2.utils import show_image, plot_attention, save_model
 from link2.networks import EncoderDecoderLSTM
+from link2.data_preprocessing import transforms
 
 # locations of the training / validation data
 data_train_images_path = f"{cwd}/data/flickr8k/Flickr8kTrainImages/"
@@ -37,14 +37,6 @@ tb = SummaryWriter(log_dir=cwd + "/tensorboard/link2/images_" + id_run)
 # setting the constants
 BATCH_SIZE = 1024
 NUM_WORKER = 4
-
-# defining the transform to be applied
-transforms = T.Compose([
-    T.Resize(226),
-    T.RandomCrop(224),
-    T.ToTensor(),
-    T.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
-])
 
 # Train dataset and dataloader
 dataset_train = FlickrDataset(root_dir=data_train_images_path, captions_file=data_train_captions, transform=transforms)
@@ -144,8 +136,7 @@ for epoch in range(num_epochs):
 
     # save the latest model
     if epoch % save_every_epochs == 0 or epoch == num_epochs - 1:
-        save_model(model, epoch, embed_size, vocab_size, attention_dim, encoder_dim, decoder_dim,
-                   f"{id_run}_{epoch:03d}")
+        torch.save(model, f"{cwd}/models/attention_model_state_{id_run}_{epoch:03d}.pth")
 
 
 # ## 6 Visualizing the attentions
@@ -177,9 +168,6 @@ img1 = images[0].detach().clone()
 caps, alphas = get_caps_from(img.unsqueeze(0))
 
 plot_attention(img1, caps, alphas)
-
-# In[ ]:
-
 
 # show any 1
 dataiter = iter(data_loader_validation)
