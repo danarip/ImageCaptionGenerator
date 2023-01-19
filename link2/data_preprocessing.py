@@ -6,9 +6,18 @@ from collections import Counter
 import torch
 from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
+import torchvision.transforms as T
 
 import spacy
 spacy_eng = spacy.load("en_core_web_sm")
+
+# defining the transform to be applied
+transforms = T.Compose([
+    T.Resize(226),
+    T.RandomCrop(224),
+    T.ToTensor(),
+    T.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+])
 
 
 class Vocabulary:
