@@ -10,7 +10,7 @@ from link2.data_preprocessing import transforms
 from definitions import cwd
 
 
-def greedy_decoding(model, img_batched, sos_id, eos_id, pad_id, idx2word, max_len, device):
+def greedy_decoding(model, img_batched, sos_id, eos_id, pad_id, idx2word, max_len, device, tgt_mask):
     """Performs greedy decoding for the caption generation.
     At each iteration model predicts the next word in the caption given the previously
     generated words and image features. For the next word we always take the most probable one.
@@ -46,12 +46,15 @@ def greedy_decoding(model, img_batched, sos_id, eos_id, pad_id, idx2word, max_le
         padd_mask[:, i] = False
 
         # Get the model prediction for the next word
-        y_pred_prob = model(img_batched, x_words, padd_mask)
+        y_pred_prob = model(img_batched, x_words, padd_mask, tgt_mask=tgt_mask)
         # Extract the prediction from the specific (next word) position of the target sequence
-        y_pred_prob = y_pred_prob[torch.arange(batch_size), [i] * batch_size].clone()
+        y_pred_prob  = y_pred_prob[:, i, :].clone()
         # Extract the most probable word
         y_pred = y_pred_prob.argmax(-1)
-        
+
+        #y_pred_prob_prev = y_pred_prob.clone()
+        #y_pred_prev = y_pred.clone()
+
         for batch_idx in range(batch_size):
             if is_decoded[batch_idx]:
                 continue
@@ -80,6 +83,19 @@ def greedy_decoding(model, img_batched, sos_id, eos_id, pad_id, idx2word, max_le
     return generated_captions
 
 
+def idx_batch_to_sentences(idx_batch, idx2word, pad_idx):
+    results = list()
+    for idx_batch_line in idx_batch:
+        sentence_word = []
+        for idx in idx_batch_line:
+            idx = idx.item()
+            if idx == pad_idx:
+                break
+            word = idx2word[idx] if idx in idx2word.keys() else "U"
+            sentence_word.append(word)
+        results.append(" ".join(sentence_word))
+    return results
+
 def show_transformer_validation(model,
                                 data_loader_validation,
                                 tb,
@@ -94,15 +110,17 @@ def show_transformer_validation(model,
     model.eval()
     with torch.no_grad():
         dataiter = iter(data_loader_validation)
-        img, pred_caption = next(dataiter)
-        img, pred_caption = img.to(device), pred_caption.to(device)
+        img, orig_captions = next(dataiter)
+        img = img.to(device)
+        orig_caption_words = idx_batch_to_sentences(orig_captions, idx2word, pad_idx)
+
         # greedy_decoding(model, img_features_batched, sos_id, eos_id, pad_id, idx2word, max_len, device):
         captions_pred_batch = greedy_decoding(model, img, sos_idx, eos_idx, pad_idx, idx2word, max_len=max_len - 1,
                                               device=device)
         captions_pred_batch = captions_pred_batch[:batch_size_val]
 
         for i, caption in enumerate(captions_pred_batch):
-            caption = ' '.join(caption)
+            caption = ' '.join(caption) + "|" + orig_caption_words[i]
             show_image(img[i], title=f"{i}:{caption}", tb=tb)
 
 
@@ -110,6 +128,7 @@ def show_network(model_path=f"{cwd}/models/attention_model_state_20230119_191102
                  batch_size_val=20,
                  seq_len=30):
     model = torch.load(model_path)
+    model.eval()
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f"device to rune on {device}")
     data_train_images_path = f"{cwd}/data/flickr8k/Flickr8kTrainImages/"
@@ -124,12 +143,12 @@ def show_network(model_path=f"{cwd}/models/attention_model_state_20230119_191102
     idx2word = dataset_train.vocab.itos
 
     id_run = model_path.split("/")[-1]
-    tb = SummaryWriter(log_dir=cwd + "/tensorboard/link2/transformers_val_" + id_run)
+    tb = SummaryWriter(log_dir=cwd + "/tensorboard/link4/transformers_val_" + id_run)
 
     # Validation dataset and dataloader
     dataset_validation = FlickrDataset(root_dir=data_validation_images_path, captions_file=data_validation_captions,
                                        transform=transforms, vocab=dataset_train.vocab)
-    data_loader_validation = DataLoader(dataset=dataset_validation, batch_size=batch_size_val, num_workers=1,
+    data_loader_validation = DataLoader(dataset=dataset_validation, batch_size=batch_size_val, num_workers=0,
                                         shuffle=True, collate_fn=CapsCollate(pad_idx=pad_idx, batch_first=True,
                                                                              max_len=seq_len))
     show_transformer_validation(model,

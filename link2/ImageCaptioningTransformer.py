@@ -32,7 +32,7 @@ data_validation_images_path = f"{cwd}/data/flickr8k/Flickr8kTrainImages/"
 data_validation_captions = f"{cwd}/data/flickr8k/captions_train.txt"
 
 id_run = datetime.now().strftime("%Y%m%d_%H%M%S")
-tb = SummaryWriter(log_dir=cwd + "/tensorboard/link2/transformers_images_" + id_run)
+tb = SummaryWriter(log_dir=cwd + "/tensorboard/link3/transformers_images_" + id_run)
 
 # Initiate the Dataset and Dataloader
 # setting the constants
@@ -58,7 +58,7 @@ data_loader_validation = DataLoader(dataset=dataset_validation, batch_size=BATCH
                                     shuffle=True, collate_fn=CapsCollate(pad_idx=pad_idx, batch_first=True,
                                                                          max_len=seq_len))
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 print(f"device to rune on {device}")
 
 # 3) Defining the Model Architecture
@@ -82,6 +82,7 @@ nhead = 8
 d_model = 2048
 dim_feedforward = 512
 dropout = 0.3
+
 model = EncoderDecoderTransformer(
     image_dimension=image_dimension,
     embed_size=embed_size,
@@ -95,7 +96,18 @@ model = EncoderDecoderTransformer(
     device=device,
     dropout=dropout
 )
-
+"""
+model = EncoderDecoderTransformer(
+    "resnet34",
+    226,
+    vocab_size=len(dataset_train.vocab),
+    max_seq_length=seq_len,
+    num_decoder_layers=6,
+    n_head=8,
+    d_model=512,
+    fc_dim=512,
+    dropout=0.2)
+"""
 model = model.to(device)
 
 criterion = nn.CrossEntropyLoss(ignore_index=dataset_train.vocab.stoi["<PAD>"])
@@ -108,19 +120,21 @@ save_every_epochs = 10
 num_batches = len(data_loader_train)
 num_of_pics_to_show = 3
 
+tgt_mask = nn.Transformer.generate_square_subsequent_mask(seq_len-1).to(device) != 0
+
 time_start_training = time.time()
 for epoch in range(num_epochs):
     time_start_epoch = time.time()
     for idx, (image, captions) in enumerate(data_loader_train):
         image, captions = image.to(device), captions.to(device)
         captions = captions[:, 1:]
-        # print(f"{captions.shape[1]}")
-
+        tgt_key_padding_mask = captions != pad_idx  # tgt_key_padding_mask: (T) for unbatched input otherwise (N, T)
+        tgt_key_padding_mask.to(device)
         # Zero the gradients.
         optimizer.zero_grad()
 
         # Feed forward
-        outputs = model(image, captions)
+        outputs = model(image, captions, tgt_mask=tgt_mask)
         outputs = outputs[:, :-1]
 
         # Calculate the batch loss.
@@ -147,7 +161,8 @@ for epoch in range(num_epochs):
                 img, pred_caption = next(dataiter)
                 img, pred_caption = img.to(device), pred_caption.to(device)
                 # greedy_decoding(model, img_features_batched, sos_id, eos_id, pad_id, idx2word, max_len, device):
-                captions_pred_batch = greedy_decoding(model, img, sos_idx, eos_idx, pad_idx, idx2word, max_len=seq_len-1, device=device)
+                captions_pred_batch = greedy_decoding(model, img, sos_idx, eos_idx, pad_idx, idx2word,
+                                                      max_len=seq_len - 1, device=device, tgt_mask=tgt_mask)
                 captions_pred_batch = captions_pred_batch[:BATCH_SIZE_VAL]
 
                 for i, caption in enumerate(captions_pred_batch):

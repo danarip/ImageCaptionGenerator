@@ -15,7 +15,7 @@ from torch.utils.tensorboard import SummaryWriter
 from root import cwd
 from link2.data_preprocessing import FlickrDataset, CapsCollate
 from link2.utils import show_image
-from link2.networks_transformer import EncoderDecoderTransformer
+from link2.networks_transformer_backup2 import EncoderDecoderTransformer
 
 # location of the training data
 data_location = f"{cwd}/data/flickr8k"
