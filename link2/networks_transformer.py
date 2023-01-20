@@ -66,6 +66,7 @@ class CaptionDecoder(nn.Module):
 
         # Load pretrained word embeddings
         self.embedding_layer = nn.Embedding(vocab_size, d_model)
+        self.encoder_to_decoder = nn.Linear(self.image_dimension, self.d_model)
 
         self.positional_encodings = PositionalEncoding(d_model, dropout)
         transformer_decoder_layer = TransformerDecoderLayer(
@@ -82,6 +83,7 @@ class CaptionDecoder(nn.Module):
         # Entry mapping for word tokens
         captions = self.embedding_layer(captions) * math.sqrt(self.d_model)
         captions = self.positional_encodings(captions)
+        features = self.encoder_to_decoder(features)
 
         # Get output from the decoder
         captions = captions.permute(1, 0, 2)

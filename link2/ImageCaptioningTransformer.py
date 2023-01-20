@@ -37,7 +37,7 @@ tb = SummaryWriter(log_dir=cwd + "/tensorboard/link3/transformers_images_" + id_
 # Initiate the Dataset and Dataloader
 # setting the constants
 BATCH_SIZE = 256
-BATCH_SIZE_VAL = 10
+MAX_VAL_SHOW = 10
 NUM_WORKER = 4
 seq_len = 30
 
@@ -58,16 +58,10 @@ data_loader_validation = DataLoader(dataset=dataset_validation, batch_size=BATCH
                                     shuffle=True, collate_fn=CapsCollate(pad_idx=pad_idx, batch_first=True,
                                                                          max_len=seq_len))
 
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(f"device to rune on {device}")
 
 # 3) Defining the Model Architecture
-"""
-Model is seq2seq model. 
-In the **encoder** pretrained ResNet model is used to extract the features. 
-Decoder, is the implementation of the Bahdanau Attention Decoder. 
-In the decoder model **LSTM cell**.
-"""
 
 # Hyperparams
 embed_size = 256
@@ -75,11 +69,11 @@ vocab_size = len(dataset_train.vocab)
 attention_dim = 256
 encoder_dim = 256
 decoder_dim = 256
-learning_rate = 1e-4
+learning_rate = 1e-3
 num_decoder_layers = 4
 image_dimension = 2048
 nhead = 8
-d_model = 2048
+d_model = 256
 dim_feedforward = 512
 dropout = 0.3
 
@@ -110,8 +104,10 @@ model = EncoderDecoderTransformer(
 """
 model = model.to(device)
 
-criterion = nn.CrossEntropyLoss(ignore_index=dataset_train.vocab.stoi["<PAD>"])
+criterion = nn.CrossEntropyLoss(ignore_index=dataset_train.vocab.stoi["<PAD>"], reduction="sum")
 optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, "min")
+print(f"lr={scheduler.optimizer.param_groups[0]['lr']}")
 
 # 5) Training Job from above configs
 num_epochs = 100
@@ -120,11 +116,13 @@ save_every_epochs = 10
 num_batches = len(data_loader_train)
 num_of_pics_to_show = 3
 
-tgt_mask = nn.Transformer.generate_square_subsequent_mask(seq_len-1).to(device) != 0
+tgt_mask = nn.Transformer.generate_square_subsequent_mask(seq_len - 1).to(device) != 0
 
 time_start_training = time.time()
 for epoch in range(num_epochs):
     time_start_epoch = time.time()
+    loss_train = 0
+    no_samples = 0
     for idx, (image, captions) in enumerate(data_loader_train):
         image, captions = image.to(device), captions.to(device)
         captions = captions[:, 1:]
@@ -143,33 +141,60 @@ for epoch in range(num_epochs):
 
         # Backward pass.
         loss.backward()
-        time_of_loss = epoch + idx / num_batches
-        print(f"time of loss={time_of_loss}")
-        tb.add_scalar("loss", loss.item(), time_of_loss)
+        loss_train += loss.item()
+        no_samples += image.shape[0]
 
         # Update the parameters in the optimizer.
         optimizer.step()
 
         if idx % print_every == 0:
-            s = f"E{epoch:03d}/{num_epochs:03d} i{idx:03d}/{num_batches:03d} loss{loss.item():.5f}"
-            print(s)
+            epoch_batch_loss_str = f"E{epoch:03d}/{num_epochs:03d} i{idx:03d}/{num_batches:03d} loss={loss_train/no_samples:.5f}"
+            print(f"{epoch_batch_loss_str} device={device}")
 
             # generate the caption
             model.eval()
             with torch.no_grad():
                 dataiter = iter(data_loader_validation)
-                img, pred_caption = next(dataiter)
-                img, pred_caption = img.to(device), pred_caption.to(device)
+                img, _ = next(dataiter)
+                img = img.to(device)
+                img = img[:MAX_VAL_SHOW, :, :]
                 # greedy_decoding(model, img_features_batched, sos_id, eos_id, pad_id, idx2word, max_len, device):
                 captions_pred_batch = greedy_decoding(model, img, sos_idx, eos_idx, pad_idx, idx2word,
                                                       max_len=seq_len - 1, device=device, tgt_mask=tgt_mask)
-                captions_pred_batch = captions_pred_batch[:BATCH_SIZE_VAL]
-
                 for i, caption in enumerate(captions_pred_batch):
                     caption = ' '.join(caption)
-                    show_image(img[i], title=s + ":" + caption, tb=tb)
+                    show_image(img[i], title=epoch_batch_loss_str + ":" + caption, tb=tb)
 
             model.train()
+    loss_train_mean = loss_train / no_samples
+    # Compute validation loss
+    loss_val = 0
+    no_samples_val = 0
+    for idx, (image, captions) in enumerate(data_loader_validation):
+        image, captions = image.to(device), captions.to(device)
+        captions = captions[:, 1:]
+        tgt_key_padding_mask = captions != pad_idx  # tgt_key_padding_mask: (T) for unbatched input otherwise (N, T)
+        tgt_key_padding_mask.to(device)
+        # Zero the gradients.
+        optimizer.zero_grad()
+
+        # Feed forward
+        outputs = model(image, captions, tgt_mask=tgt_mask)
+        outputs = outputs[:, :-1]
+
+        # Calculate the batch loss.
+        targets = captions[:, 1:]
+        loss = criterion(outputs.contiguous().view(-1, vocab_size), targets.reshape(-1))
+        loss_val += loss.item()
+        no_samples_val += image.shape[0]
+
+    loss_val_mean = loss_val / no_samples_val
+    print(f"loss_train_mean={loss_train_mean})")
+    print(f"loss_val_mean={loss_val_mean})")
+    scheduler.step(loss_val)
+    tb.add_scalars("loss", {"train": loss_train_mean, "val": loss_val_mean}, epoch)
+    tb.add_scalar("learning_rate", scheduler.optimizer.param_groups[0]['lr'], epoch)
+    print(f"lr={scheduler.optimizer.param_groups[0]['lr']}")
     time_from_training_start = (time.time() - time_start_training)
     expected_time = num_epochs / (epoch + 1) * time_from_training_start
     print(f"epoch time {time_from_training_start / (epoch + 1):.2f} [sec], elapsed_time {time_from_training_start}")
@@ -178,4 +203,4 @@ for epoch in range(num_epochs):
     # save the latest model
     # save the latest model
     if epoch % save_every_epochs == 0 or epoch == num_epochs - 1:
-        torch.save(model, f"{cwd}/models/attention_model_state_{id_run}_{epoch:03d}.pth")
+        torch.save(model, f"{cwd}/models/transformer_image_caption_model_state_{id_run}_{epoch:03d}.pth")
