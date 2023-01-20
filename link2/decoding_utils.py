@@ -32,8 +32,8 @@ def greedy_decoding(model, img_batched, sos_id, eos_id, pad_id, idx2word, max_le
     # Define the initial state of decoder input
     x_words = torch.Tensor([sos_id] + [pad_id] * (max_len - 1)).to(device).long()
     x_words = x_words.repeat(batch_size, 1)
-    padd_mask = torch.Tensor([True] * max_len).to(device).bool()
-    padd_mask = padd_mask.repeat(batch_size, 1)
+    tgt_key_padding_mask = torch.Tensor([True] * max_len).to(device).bool()
+    tgt_key_padding_mask = tgt_key_padding_mask.repeat(batch_size, 1)
 
     # Is each image from the batch decoded
     is_decoded = [False] * batch_size
@@ -43,17 +43,14 @@ def greedy_decoding(model, img_batched, sos_id, eos_id, pad_id, idx2word, max_le
 
     for i in range(max_len - 1):
         # Update the padding masks
-        padd_mask[:, i] = False
+        tgt_key_padding_mask[:, i] = False
 
         # Get the model prediction for the next word
-        y_pred_prob = model(img_batched, x_words, padd_mask, tgt_mask=tgt_mask)
+        y_pred_prob = model(img_batched, x_words, tgt_key_padding_mask=tgt_key_padding_mask, tgt_mask=tgt_mask)
         # Extract the prediction from the specific (next word) position of the target sequence
         y_pred_prob  = y_pred_prob[:, i, :].clone()
         # Extract the most probable word
         y_pred = y_pred_prob.argmax(-1)
-
-        #y_pred_prob_prev = y_pred_prob.clone()
-        #y_pred_prev = y_pred.clone()
 
         for batch_idx in range(batch_size):
             if is_decoded[batch_idx]:
@@ -96,6 +93,7 @@ def idx_batch_to_sentences(idx_batch, idx2word, pad_idx):
         results.append(" ".join(sentence_word))
     return results
 
+
 def show_transformer_validation(model,
                                 data_loader_validation,
                                 tb,
@@ -124,9 +122,9 @@ def show_transformer_validation(model,
             show_image(img[i], title=f"{i}:{caption}", tb=tb)
 
 
-def show_network(model_path=f"{cwd}/models/attention_model_state_20230119_191102_090.pth",
-                 batch_size_val=20,
-                 seq_len=30):
+def show_images_of_network(model_path=f"{cwd}/models/attention_model_state_20230119_191102_090.pth",
+                           batch_size_val=20,
+                           seq_len=30):
     model = torch.load(model_path)
     model.eval()
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -164,4 +162,4 @@ def show_network(model_path=f"{cwd}/models/attention_model_state_20230119_191102
 
 
 if __name__ == "__main__":
-    show_network()
+    show_images_of_network()

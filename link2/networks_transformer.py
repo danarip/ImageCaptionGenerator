@@ -78,7 +78,6 @@ class CaptionDecoder(nn.Module):
                                           num_layers=num_decoder_layers)
         self.classifier = nn.Linear(d_model, vocab_size)
 
-
     def forward(self, features, captions,  tgt_key_padding_mask=None, tgt_mask=None):
         # Entry mapping for word tokens
         captions = self.embedding_layer(captions) * math.sqrt(self.d_model)
