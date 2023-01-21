@@ -10,6 +10,7 @@ CNN-SamLynnEvans Architecture
 https://github.com/senadkurtisi/pytorch-image-captioning
 '''
 from datetime import datetime
+import os
 import time
 
 import torch
@@ -37,13 +38,14 @@ def single_run(
         data_validation_captions=f"{cwd}/data/flickr8k/captions_train.txt",
 
         # Running parameters #
+        freq_threshold=2,
         batch_size=256,
         data_limit=512,
         max_val_show=10,
         num_worker=4,
         learning_rate=1e-3,
         num_epochs=100,
-        cuda_number=1,
+        device_ids=[0, 1],
         print_every=5,
         save_every_epochs=10,
 
@@ -55,7 +57,7 @@ def single_run(
         # lstm parameters #
         attention_dim=256,
         encoder_dim=2048,
-        decoder_dim=256,
+        decoder_dim=512,
 
         # Transformer parameters #
         num_decoder_layers=4,
@@ -70,7 +72,7 @@ def single_run(
 
     # Train dataset and dataloader
     dataset_train = FlickrDataset(root_dir=data_train_images_path, captions_file=data_train_captions,
-                                  transform=transforms, data_limit=data_limit)
+                                  transform=transforms, data_limit=data_limit, freq_threshold=freq_threshold)
     pad_idx = dataset_train.vocab.stoi["<PAD>"]
     sos_idx = dataset_train.vocab.stoi["<SOS>"]
     eos_idx = dataset_train.vocab.stoi["<EOS>"]
@@ -88,8 +90,8 @@ def single_run(
     vocab_size = len(dataset_train.vocab)
 
     # Device handling
-    device = torch.device(f"cuda:{cuda_number}" if torch.cuda.is_available() else "cpu")
-    print(f"device to rune on {device}")
+    device = torch.device(f"cuda:{device_ids[0]}" if torch.cuda.is_available() else "cpu")
+    print(f"device to run on {device}")
 
     # Defining the Model Architecture
     if run_mode == "transformer":
@@ -105,6 +107,7 @@ def single_run(
             device=device,
             dropout=dropout
         )
+        number_parameters = model.num_parameters
         # Explanation: https://pytorch.org/docs/stable/generated/torch.nn.Transformer.html
         # Square TxT mask for decoder, so the transformer won't cheat during the training and testing.
         tgt_mask = nn.Transformer.generate_square_subsequent_mask(seq_len - 1).to(device) != 0
@@ -116,10 +119,12 @@ def single_run(
             encoder_dim=encoder_dim,
             decoder_dim=decoder_dim,
             device=device)
+        number_parameters = model.num_parameters
     else:
         raise Exception(f"no run_mode={run_mode}")
-
-    model = model.to(device)
+    print(f"total number parameters={number_parameters:,}")
+    model = nn.DataParallel(model, device_ids=device_ids).to(device)
+    # model = model.to(device)
 
     criterion = nn.CrossEntropyLoss(ignore_index=dataset_train.vocab.stoi["<PAD>"], reduction="sum")
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
@@ -132,7 +137,6 @@ def single_run(
 
     time_start_training = time.time()
     for epoch in range(num_epochs):
-        # time_start_epoch = time.time()
         loss_train = 0
         no_samples = 0
         for idx, (image, captions) in enumerate(data_loader_train):
@@ -145,10 +149,10 @@ def single_run(
             if run_mode == "transformer":
                 tgt_key_padding_mask = captions != pad_idx  # tgt_key_padding_mask: (T) for unbatched input otherwise (N, T)
                 tgt_key_padding_mask.to(device)
-                outputs = model(image, captions, tgt_mask=tgt_mask)
+                outputs = model.module.forward(image, captions, tgt_mask=tgt_mask)
                 outputs = outputs[:, :-1]
             else:
-                outputs, attentions = model(image, captions)
+                outputs, attentions = model.module.forward(image, captions)
 
             # Calculate the batch loss.
             targets = captions[:, 1:]
@@ -166,9 +170,9 @@ def single_run(
                 epoch_batch_info_str = f"E{epoch:03d}/{num_epochs:03d} i{idx:03d}/{num_batches:03d} loss={loss_train / no_samples:.5f}"
                 print(f"{epoch_batch_info_str} device={device}")
 
+                model.eval()
                 # Transformer: sending images and captions to the tensorboard
                 if run_mode=="transformer":
-                    model.eval()
                     with torch.no_grad():
                         dataiter = iter(data_loader_validation)
                         img, _ = next(dataiter)
@@ -178,9 +182,21 @@ def single_run(
                                                               max_len=seq_len - 1, device=device, tgt_mask=tgt_mask)
                         for i, caption in enumerate(captions_pred_batch):
                             caption = ' '.join(caption)
-                            show_image(img[i], title=epoch_batch_info_str + ":" + caption, tb=tb)
+                            show_image(img[i], title=epoch_batch_info_str + " T:" + caption, tb=tb)
 
-                    model.train()
+                else:
+                    with torch.no_grad():
+                        for _ in range(num_of_pics_to_show):
+                            dataiter = iter(data_loader_validation)
+                            img, _ = next(dataiter)
+                            features = model.module.encoder(img[0:1].to(device))  # drip: added module for parallelization
+                            caps, alphas = model.module.decoder.generate_caption(features,
+                                                                          vocab=dataset_train.vocab)  # drip: added module for parallelization
+                            caption = ' '.join(caps)
+                            show_image(img[0], title=epoch_batch_info_str + " L:" + caption, tb=tb)
+
+                model.train()
+
         loss_train_mean = loss_train / no_samples
         # Compute validation loss
         loss_val = 0
@@ -195,7 +211,7 @@ def single_run(
             if run_mode == "transformer":
                 tgt_key_padding_mask = captions != pad_idx  # tgt_key_padding_mask: (T) for unbatched input otherwise (N, T)
                 tgt_key_padding_mask.to(device)
-                outputs = model(image, captions, tgt_mask=tgt_mask)
+                outputs = model.module.forward(image, captions, tgt_mask=tgt_mask)
                 outputs = outputs[:, :-1]
             else:
                 outputs, attentions = model(image, captions)
@@ -221,8 +237,26 @@ def single_run(
         # save the latest model
         # save the latest model
         if epoch % save_every_epochs == 0 or epoch == num_epochs - 1:
-            torch.save(model, f"{cwd}/models/transformer_image_caption_model_state_{id_run}_{epoch:03d}.pth")
+            model_save_filename = f"{cwd}/models/{run_mode}_image_caption_model_state_{id_run}_{epoch:03d}.pth"
+            torch.save(model, model_save_filename)
+            memory_size = os.stat(model_save_filename).st_size / (1024 * 1024)
+            print(f"save model {model_save_filename} size is {memory_size:.2f}MB")
+    total_run_time = time.time() - time_start_training
+    # measures and return values
+    result = dict()
+    result["id"] = id_run
+    result["number_parameters"] = number_parameters
+    result["total_run_time"] = total_run_time
+    result["loss_train_mean"] = loss_train_mean
+    result["loss_val_mean"] = loss_val_mean
+    result["memory_size"] = memory_size
+    return result
 
 
 if __name__ == "__main__":
-    single_run()
+    res = single_run(
+        run_mode="transformer",
+        num_epochs=10,
+        data_limit=None,
+        batch_size=1024)
+    print(f"result={res}")
