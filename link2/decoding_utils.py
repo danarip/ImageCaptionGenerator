@@ -46,7 +46,7 @@ def greedy_decoding(model, img_batched, sos_id, eos_id, pad_id, idx2word, max_le
         tgt_key_padding_mask[:, i] = False
 
         # Get the model prediction for the next word
-        y_pred_prob = model(img_batched, x_words, tgt_key_padding_mask=tgt_key_padding_mask, tgt_mask=tgt_mask)
+        y_pred_prob = model.module.forward(img_batched, x_words, tgt_key_padding_mask=tgt_key_padding_mask, tgt_mask=tgt_mask)
         # Extract the prediction from the specific (next word) position of the target sequence
         y_pred_prob  = y_pred_prob[:, i, :].clone()
         # Extract the most probable word
