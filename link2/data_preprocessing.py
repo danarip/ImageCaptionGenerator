@@ -63,7 +63,13 @@ class FlickrDataset(Dataset):
     FlickrDataset
     """
 
-    def __init__(self, root_dir, captions_file, transform=None, freq_threshold=5, vocab=None):
+    def __init__(self,
+                 root_dir,
+                 captions_file,
+                 transform=None,
+                 freq_threshold=5,
+                 vocab=None,
+                 data_limit=None):
         self.root_dir = root_dir
         self.df = pd.read_csv(captions_file)
         self.transform = transform
@@ -71,6 +77,10 @@ class FlickrDataset(Dataset):
         # Get image and caption colum from the dataframe
         self.imgs = self.df["image"]
         self.captions = self.df["caption"]
+        # If needed truncating the data for faster running
+        if data_limit is not None:
+            self.imgs = self.imgs[:data_limit]
+            self.captions = self.captions[:data_limit]
 
         # Initialize vocabulary and build vocab
         if vocab is None:
@@ -80,7 +90,8 @@ class FlickrDataset(Dataset):
             self.vocab = vocab
 
     def __len__(self):
-        return len(self.df)
+        # return len(self.df)
+        return self.imgs.shape[0]
 
     def __getitem__(self, idx):
         caption = self.captions[idx]

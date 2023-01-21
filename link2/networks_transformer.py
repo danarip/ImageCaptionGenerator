@@ -2,7 +2,6 @@ import math
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.nn import TransformerDecoderLayer, TransformerDecoder
 
 from link2.networks_lstm import EncoderCNN
@@ -20,6 +19,8 @@ class PositionalEncoding(nn.Module):
         pe[:, 0, 0::2] = torch.sin(position * div_term)
         pe[:, 0, 1::2] = torch.cos(position * div_term)
         self.register_buffer('pe', pe)
+        self.num_parameters = pytorch_total_params = sum(p.numel() for p in self.parameters())
+        print(f"no. PositionalEncoding={self.num_parameters}")
 
     def forward(self, x):
         """
@@ -78,6 +79,8 @@ class CaptionDecoder(nn.Module):
         self.decoder = TransformerDecoder(decoder_layer=transformer_decoder_layer,
                                           num_layers=num_decoder_layers)
         self.classifier = nn.Linear(d_model, vocab_size)
+        self.num_parameters = pytorch_total_params = sum(p.numel() for p in self.parameters())
+        print(f"no. CaptionDecoder={self.num_parameters}")
 
     def forward(self, features, captions,  tgt_key_padding_mask=None, tgt_mask=None):
         # Entry mapping for word tokens
@@ -123,6 +126,9 @@ class EncoderDecoderTransformer(nn.Module):
             device=device,
             dropout=dropout
         )
+        self.num_parameters = pytorch_total_params = sum(p.numel() for p in self.parameters())
+        print(f"no. EncoderDecoderTransformer={self.num_parameters}")
+
 
     def forward(self, images, captions, tgt_key_padding_mask=None, tgt_mask=None):
         features = self.encoder(images)
