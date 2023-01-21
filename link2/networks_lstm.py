@@ -14,6 +14,8 @@ class EncoderCNN(nn.Module):
         modules = list(resnet.children())[:-2]  # 2048 x 7 x 7
         self.resnet = nn.Sequential(*modules)
         self.device = device  # drip: can be removed?
+        self.num_parameters = pytorch_total_params = sum(p.numel() for p in self.parameters())
+        print(f"no. EncoderCNN={self.num_parameters}")
 
     def forward(self, images):
         features = self.resnet(images)  # (batch_size,2048,7,7)
@@ -33,6 +35,8 @@ class Attention(nn.Module):
         self.W = nn.Linear(decoder_dim, attention_dim)
         self.U = nn.Linear(encoder_dim, attention_dim)
         self.A = nn.Linear(attention_dim, 1)
+        self.num_parameters = pytorch_total_params = sum(p.numel() for p in self.parameters())
+        print(f"no. Attention={self.num_parameters}")
 
     def forward(self, features, hidden_state):
         u_hs = self.U(features)  # (batch_size,num_layers,attention_dim)
@@ -52,7 +56,7 @@ class Attention(nn.Module):
 
 
 # Attention Decoder
-class DecoderRNN(nn.Module):
+class DecoderLSTMAttention(nn.Module):
     def __init__(self, embed_size, vocab_size, attention_dim, encoder_dim, decoder_dim, device, drop_prob=0.3):
         super().__init__()
         self.device = device
@@ -72,6 +76,8 @@ class DecoderRNN(nn.Module):
 
         self.fcn = nn.Linear(decoder_dim, vocab_size)
         self.drop = nn.Dropout(drop_prob)
+        self.num_parameters = pytorch_total_params = sum(p.numel() for p in self.parameters())
+        print(f"no. DecoderLSTMAttention={self.num_parameters}")
 
     def forward(self, features, captions):
 
@@ -155,12 +161,18 @@ class DecoderRNN(nn.Module):
 # In[28]:
 
 
-class EncoderDecoderLSTM(nn.Module):
-    def __init__(self, embed_size, vocab_size, attention_dim, encoder_dim, decoder_dim, device, drop_prob=0.3):
+class EncoderDecoderLSTMAttention(nn.Module):
+    def __init__(self,
+                 embed_size,
+                 vocab_size,
+                 attention_dim,
+                 encoder_dim,
+                 decoder_dim,
+                 device):
         super().__init__()
         self.device = device
         self.encoder = EncoderCNN(device=device)
-        self.decoder = DecoderRNN(
+        self.decoder = DecoderLSTMAttention(
             embed_size=embed_size,
             vocab_size=vocab_size,
             attention_dim=attention_dim,
@@ -168,6 +180,8 @@ class EncoderDecoderLSTM(nn.Module):
             decoder_dim=decoder_dim,
             device=device
         )
+        self.num_parameters = pytorch_total_params = sum(p.numel() for p in self.parameters())
+        print(f"no. EncoderDecoderLSTMAttention={self.num_parameters}")
 
     def forward(self, images, captions):
         features = self.encoder(images)

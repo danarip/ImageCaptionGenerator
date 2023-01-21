@@ -21,7 +21,7 @@ from torch.utils.tensorboard import SummaryWriter
 from root import cwd
 from link2.data_preprocessing import FlickrDataset, CapsCollate
 from link2.utils import show_image
-from link2.networks_lstm import EncoderDecoderLSTM
+from link2.networks_lstm import EncoderDecoderLSTMAttention
 from link2.data_preprocessing import transforms
 
 # locations of the training / validation data
@@ -68,7 +68,7 @@ attention_dim = 256
 encoder_dim = 2048
 decoder_dim = 256
 learning_rate = 3e-4
-model = EncoderDecoderLSTM(
+model = EncoderDecoderLSTMAttention(
     embed_size=embed_size,
     vocab_size=vocab_size,
     attention_dim=attention_dim,
