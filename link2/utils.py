@@ -45,3 +45,9 @@ def save_model(model2save,
     }
     torch.save(model_state, f"{cwd}/models/attention_model_state_{id_for_save}.pth")
 
+
+def load_file(path):
+    f = open(path, "r")
+    s = f.read()
+    f.close()
+    return s

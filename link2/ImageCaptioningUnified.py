@@ -31,6 +31,7 @@ from link2.decoding_utils import greedy_decoding
 
 def single_run(
         run_mode="lstm",
+        tb_run_name="experiment_6_01_shabat_erev",
 
         # locations of the training / validation data #
         data_train_images_path=f"{cwd}/data/flickr8k/Flickr8kTrainImages/",
@@ -69,9 +70,10 @@ def single_run(
         dim_feedforward=512,
         dropout=0.3,
 ):
+    local_mem = locals()
     # Running unique ids
     id_run = datetime.now().strftime("%Y%m%d_%H%M%S")
-    tb = SummaryWriter(log_dir=f"{cwd}/tensorboard/link4/{run_mode}_images_{id_run}")
+    tb = SummaryWriter(log_dir=f"{cwd}/tensorboard/{tb_run_name}/{run_mode}_images_{id_run}")
 
     # Train dataset and dataloader
     dataset_train = FlickrDataset(root_dir=data_train_images_path, captions_file=data_train_captions,
@@ -96,6 +98,10 @@ def single_run(
                                   shuffle=True, collate_fn=CapsCollate(pad_idx=pad_idx, batch_first=True,
                                                                        max_len=seq_len))
     vocab_size = len(dataset_train.vocab)
+
+
+    # Choose 30 pictures to run with along the training of both
+
 
     # Device handling
     device = torch.device(f"cuda:{device_ids[0]}" if torch.cuda.is_available() else "cpu")
@@ -189,6 +195,7 @@ def single_run(
                         img = img[:max_val_show, :, :]
                         captions_pred_batch = greedy_decoding(model, img, sos_idx, eos_idx, pad_idx, idx2word,
                                                               max_len=seq_len - 1, device=device, tgt_mask=tgt_mask)
+                        print(epoch_batch_info_str + " T:" + ' '.join(captions_pred_batch[0]))
                         for i, caption in enumerate(captions_pred_batch):
                             caption = ' '.join(caption)
                             show_image(img[i], title=epoch_batch_info_str + " T:" + caption, tb=tb)
@@ -279,6 +286,7 @@ def single_run(
     total_run_time = time.time() - time_start_training
     # measures and return values
     result = OrderedDict()
+    result["run_mode"] = run_mode
     result["id"] = id_run
     result["number_parameters"] = number_parameters
     result["total_run_time"] = total_run_time
@@ -286,13 +294,15 @@ def single_run(
     result["loss_val_mean"] = loss_val_mean
     result["loss_test_mean"] = loss_test_mean
     result["memory_size"] = memory_size
+    result["total_run_time"] = total_run_time
+    result["locals"] = local_mem
     return result
 
 
 if __name__ == "__main__":
     res = single_run(
-        run_mode="lstm",
-        num_epochs=100,
+        run_mode="transformer",
+        num_epochs=10,
         data_limit=None,
-        batch_size=1024)
+        batch_size=256)
     print(f"result={res}")
