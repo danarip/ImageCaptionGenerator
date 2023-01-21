@@ -12,6 +12,7 @@ https://github.com/senadkurtisi/pytorch-image-captioning
 from datetime import datetime
 import os
 import time
+from collections import OrderedDict
 
 import torch
 import torch.nn as nn
@@ -34,14 +35,16 @@ def single_run(
         # locations of the training / validation data #
         data_train_images_path=f"{cwd}/data/flickr8k/Flickr8kTrainImages/",
         data_train_captions=f"{cwd}/data/flickr8k/captions_train.txt",
-        data_validation_images_path=f"{cwd}/data/flickr8k/Flickr8kTrainImages/",
-        data_validation_captions=f"{cwd}/data/flickr8k/captions_train.txt",
+        data_validation_images_path=f"{cwd}/data/flickr8k/Flickr8kValidationImages/",
+        data_validation_captions=f"{cwd}/data/flickr8k/captions_validation.txt",
+        data_test_images_path=f"{cwd}/data/flickr8k/Flickr8kTestImages/",
+        data_test_captions=f"{cwd}/data/flickr8k/captions_test.txt",
 
         # Running parameters #
         freq_threshold=2,
         batch_size=256,
-        data_limit=512,
-        max_val_show=10,
+        data_limit=512,  # dbg
+        max_val_show=10,  # tsb
         num_worker=4,
         learning_rate=1e-3,
         num_epochs=100,
@@ -68,7 +71,7 @@ def single_run(
 ):
     # Running unique ids
     id_run = datetime.now().strftime("%Y%m%d_%H%M%S")
-    tb = SummaryWriter(log_dir=f"{cwd}/tensorboard/link3/{run_mode}_images_{id_run}")
+    tb = SummaryWriter(log_dir=f"{cwd}/tensorboard/link4/{run_mode}_images_{id_run}")
 
     # Train dataset and dataloader
     dataset_train = FlickrDataset(root_dir=data_train_images_path, captions_file=data_train_captions,
@@ -83,10 +86,15 @@ def single_run(
 
     # Validation dataset and dataloader
     dataset_validation = FlickrDataset(root_dir=data_validation_images_path, captions_file=data_validation_captions,
-                                       transform=transforms, vocab=dataset_train.vocab,data_limit=data_limit)
+                                       transform=transforms, vocab=dataset_train.vocab, data_limit=data_limit)
     data_loader_validation = DataLoader(dataset=dataset_validation, batch_size=batch_size, num_workers=num_worker,
                                         shuffle=True, collate_fn=CapsCollate(pad_idx=pad_idx, batch_first=True,
                                                                              max_len=seq_len))
+    dataset_test = FlickrDataset(root_dir=data_test_images_path, captions_file=data_test_captions,
+                                 transform=transforms, vocab=dataset_train.vocab, data_limit=data_limit)
+    data_loader_test = DataLoader(dataset=dataset_test, batch_size=batch_size, num_workers=num_worker,
+                                  shuffle=True, collate_fn=CapsCollate(pad_idx=pad_idx, batch_first=True,
+                                                                       max_len=seq_len))
     vocab_size = len(dataset_train.vocab)
 
     # Device handling
@@ -138,18 +146,19 @@ def single_run(
     time_start_training = time.time()
     for epoch in range(num_epochs):
         loss_train = 0
-        no_samples = 0
+        num_samples_train = 0
         for idx, (image, captions) in enumerate(data_loader_train):
             image, captions = image.to(device), captions.to(device)
-            captions = captions[:, 1:]
+            captions = captions[:, 0:-1]  # drip
+            # captions = captions[:, 1:]
             # Zero the gradients.
             optimizer.zero_grad()
 
-            # Feed forward
+            # Feed forward training
             if run_mode == "transformer":
-                tgt_key_padding_mask = captions != pad_idx  # tgt_key_padding_mask: (T) for unbatched input otherwise (N, T)
+                tgt_key_padding_mask = captions == pad_idx  # tgt_key_padding_mask: (T) for unbatched input otherwise (N, T)
                 tgt_key_padding_mask.to(device)
-                outputs = model.module.forward(image, captions, tgt_mask=tgt_mask)
+                outputs = model.module.forward(image, captions, tgt_mask=tgt_mask, tgt_key_padding_mask=tgt_key_padding_mask)
                 outputs = outputs[:, :-1]
             else:
                 outputs, attentions = model.module.forward(image, captions)
@@ -161,18 +170,18 @@ def single_run(
             # Backward pass.
             loss.backward()
             loss_train += loss.item()
-            no_samples += image.shape[0]
+            num_samples_train += image.shape[0]
 
             # Update the parameters in the optimizer.
             optimizer.step()
 
             if idx % print_every == 0:
-                epoch_batch_info_str = f"E{epoch:03d}/{num_epochs:03d} i{idx:03d}/{num_batches:03d} loss={loss_train / no_samples:.5f}"
+                epoch_batch_info_str = f"E{epoch:03d}/{num_epochs:03d} i{idx:03d}/{num_batches:03d} loss={loss_train / num_samples_train:.5f}"
                 print(f"{epoch_batch_info_str} device={device}")
 
                 model.eval()
                 # Transformer: sending images and captions to the tensorboard
-                if run_mode=="transformer":
+                if run_mode == "transformer":
                     with torch.no_grad():
                         dataiter = iter(data_loader_validation)
                         img, _ = next(dataiter)
@@ -189,18 +198,19 @@ def single_run(
                         for _ in range(num_of_pics_to_show):
                             dataiter = iter(data_loader_validation)
                             img, _ = next(dataiter)
-                            features = model.module.encoder(img[0:1].to(device))  # drip: added module for parallelization
+                            features = model.module.encoder(
+                                img[0:1].to(device))  # drip: added module for parallelization
                             caps, alphas = model.module.decoder.generate_caption(features,
-                                                                          vocab=dataset_train.vocab)  # drip: added module for parallelization
+                                                                                 vocab=dataset_train.vocab)  # drip: added module for parallelization
                             caption = ' '.join(caps)
                             show_image(img[0], title=epoch_batch_info_str + " L:" + caption, tb=tb)
 
                 model.train()
 
-        loss_train_mean = loss_train / no_samples
+        loss_train_mean = loss_train / num_samples_train
         # Compute validation loss
         loss_val = 0
-        no_samples_val = 0
+        num_samples_val = 0
         for idx, (image, captions) in enumerate(data_loader_validation):
             image, captions = image.to(device), captions.to(device)
             captions = captions[:, 1:]
@@ -220,9 +230,9 @@ def single_run(
             targets = captions[:, 1:]
             loss = criterion(outputs.contiguous().view(-1, vocab_size), targets.reshape(-1))
             loss_val += loss.item()
-            no_samples_val += image.shape[0]
+            num_samples_val += image.shape[0]
 
-        loss_val_mean = loss_val / no_samples_val
+        loss_val_mean = loss_val / num_samples_val
         print(f"loss_train_mean={loss_train_mean})")
         print(f"loss_val_mean={loss_val_mean})")
         scheduler.step(loss_val)
@@ -235,28 +245,54 @@ def single_run(
         print(f"expected total time {expected_time:.2f}")
 
         # save the latest model
-        # save the latest model
         if epoch % save_every_epochs == 0 or epoch == num_epochs - 1:
             model_save_filename = f"{cwd}/models/{run_mode}_image_caption_model_state_{id_run}_{epoch:03d}.pth"
             torch.save(model, model_save_filename)
             memory_size = os.stat(model_save_filename).st_size / (1024 * 1024)
             print(f"save model {model_save_filename} size is {memory_size:.2f}MB")
+
+    loss_test = 0
+    num_samples_test = 0
+    for idx, (image, captions) in enumerate(data_loader_test):
+        image, captions = image.to(device), captions.to(device)
+        captions = captions[:, 1:]
+        # Zero the gradients.
+        optimizer.zero_grad()
+
+        # Feed forward
+        if run_mode == "transformer":
+            tgt_key_padding_mask = captions != pad_idx  # tgt_key_padding_mask: (T) for unbatched input otherwise (N, T)
+            tgt_key_padding_mask.to(device)
+            outputs = model.module.forward(image, captions, tgt_mask=tgt_mask)
+            outputs = outputs[:, :-1]
+        else:
+            outputs, attentions = model(image, captions)
+
+        # Calculate the batch loss.
+        targets = captions[:, 1:]
+        loss = criterion(outputs.contiguous().view(-1, vocab_size), targets.reshape(-1))
+        loss_test += loss.item()
+        num_samples_test += image.shape[0]
+    loss_test_mean = loss_test / num_samples_test
+    print(f"loss_test_mean={loss_test_mean})")
+
     total_run_time = time.time() - time_start_training
     # measures and return values
-    result = dict()
+    result = OrderedDict()
     result["id"] = id_run
     result["number_parameters"] = number_parameters
     result["total_run_time"] = total_run_time
     result["loss_train_mean"] = loss_train_mean
     result["loss_val_mean"] = loss_val_mean
+    result["loss_test_mean"] = loss_test_mean
     result["memory_size"] = memory_size
     return result
 
 
 if __name__ == "__main__":
     res = single_run(
-        run_mode="transformer",
-        num_epochs=10,
+        run_mode="lstm",
+        num_epochs=100,
         data_limit=None,
         batch_size=1024)
     print(f"result={res}")
