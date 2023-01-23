@@ -10,6 +10,7 @@ CNN-SamLynnEvans Architecture
 https://github.com/senadkurtisi/pytorch-image-captioning
 '''
 from datetime import datetime
+import json
 import os
 import time
 from collections import OrderedDict
@@ -20,9 +21,9 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from root import cwd
+from definitions import cwd
 from source.data_preprocessing import FlickrDataset, CapsCollate
-from source.utils import show_image
+from source.utils import show_image, get_caption_from_index
 from source.networks_transformer import EncoderDecoderTransformer
 from source.networks_lstm import EncoderDecoderLSTMAttention
 from source.data_preprocessing import transforms
@@ -30,8 +31,8 @@ from source.decoding_utils import greedy_decoding
 
 
 def single_run(
-        run_mode="lstm",
-        tb_run_name="experiment_6_01_shabat_erev",
+        run_mode="lstm",  # Can be lstm or transformer
+        tb_run_name="cleaning01",
 
         # locations of the training / validation data #
         data_train_images_path=f"{cwd}/data/flickr8k/Flickr8kTrainImages/",
@@ -40,6 +41,7 @@ def single_run(
         data_validation_captions=f"{cwd}/data/flickr8k/captions_validation.txt",
         data_test_images_path=f"{cwd}/data/flickr8k/Flickr8kTestImages/",
         data_test_captions=f"{cwd}/data/flickr8k/captions_test.txt",
+        do_augmentation=False,
 
         # Running parameters #
         freq_threshold=2,
@@ -70,7 +72,8 @@ def single_run(
         dim_feedforward=512,
         dropout=0.3,
 ):
-    local_mem = locals()
+    local_memory = locals()
+    print(f"{json.dumps(local_memory, sort_keys=True, indent=4)}")
     # Running unique ids
     id_run = datetime.now().strftime("%Y%m%d_%H%M%S")
     tb = SummaryWriter(log_dir=f"{cwd}/tensorboard/{tb_run_name}/{run_mode}_images_{id_run}")
@@ -78,7 +81,7 @@ def single_run(
     # Train dataset and dataloader
     dataset_train = FlickrDataset(root_dir=data_train_images_path, captions_file=data_train_captions,
                                   transform=transforms, data_limit=data_limit, freq_threshold=freq_threshold,
-                                  do_augmentation=True)
+                                  do_augmentation=do_augmentation)
     pad_idx = dataset_train.vocab.stoi["<PAD>"]
     sos_idx = dataset_train.vocab.stoi["<SOS>"]
     eos_idx = dataset_train.vocab.stoi["<EOS>"]
@@ -99,6 +102,8 @@ def single_run(
                                   shuffle=True, collate_fn=CapsCollate(pad_idx=pad_idx, batch_first=True,
                                                                        max_len=seq_len))
     vocab_size = len(dataset_train.vocab)
+    print(f"lengths(samples): dataset_train={len(dataset_train)}, dataset_validation={len(dataset_validation)}, dataset_test={len(dataset_test)}")
+    print(f"lengths(batches): data_loader_train={len(data_loader_train)}, data_loader_validation={len(data_loader_validation)}, data_loader_test={len(data_loader_test)}, vocab_size={vocab_size}")
 
     # Choose 30 pictures to run with along the training of both
 
@@ -165,7 +170,7 @@ def single_run(
                 tgt_key_padding_mask.to(device)
                 outputs = model.module.forward(image, captions, tgt_mask=tgt_mask,
                                                tgt_key_padding_mask=tgt_key_padding_mask)
-                outputs = outputs[:, :-1]
+                outputs = outputs[:, 0:-1]
             else:
                 outputs, attentions = model.module.forward(image, captions)
 
@@ -182,25 +187,24 @@ def single_run(
             optimizer.step()
 
             if idx % print_every == 0:
-                epoch_batch_info_str = f"E{epoch:03d}/{num_epochs:03d} i{idx:03d}/{num_batches:03d} loss={loss_train / num_samples_train:.5f}"
-                print(f"{epoch_batch_info_str} device={device}")
+                epoch_batch_info_str = f"E{epoch:03d}/{num_epochs:03d} I{idx:03d}/{num_batches:03d} loss={loss_train / num_samples_train:.5f} device={device}"
 
                 model.eval()
                 # Transformer: sending images and captions to the tensorboard
                 if run_mode == "transformer":
                     with torch.no_grad():
                         dataiter = iter(data_loader_validation)
-                        img, _ = next(dataiter)
+                        img, caption_true_idx = next(dataiter)
                         img = img.to(device)
                         img = img[:max_val_show, :, :]
                         captions_pred_batch = greedy_decoding(model, img, sos_idx, eos_idx, pad_idx, idx2word,
                                                               max_len=seq_len - 1, device=device, tgt_mask=tgt_mask)
-                        title = epoch_batch_info_str + f" T{d_model},{dim_feedforward}:" + ' '.join(
-                            captions_pred_batch[0])
-                        print(title)
                         for i, caption in enumerate(captions_pred_batch):
+                            caption_true = get_caption_from_index(idx2word, caption_true_idx[i].tolist())
                             caption = ' '.join(caption)
+                            title = f"{epoch_batch_info_str} T{d_model},{dim_feedforward}|{caption}|{caption_true}"
                             show_image(img[i], title=title, tb=tb)
+                        print(title)  # show a single title
 
                 else:
                     with torch.no_grad():
@@ -299,7 +303,7 @@ def single_run(
     result["loss_test_mean"] = loss_test_mean
     result["memory_size"] = memory_size
     result["total_run_time"] = total_run_time
-    result["locals"] = local_mem
+    result["locals"] = local_memory
     return result
 
 
@@ -308,5 +312,5 @@ if __name__ == "__main__":
         run_mode="transformer",
         num_epochs=10,
         data_limit=None,
-        batch_size=256)
+        batch_size=512)
     print(f"result={res}")
