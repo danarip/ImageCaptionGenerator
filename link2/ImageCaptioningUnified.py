@@ -77,7 +77,8 @@ def single_run(
 
     # Train dataset and dataloader
     dataset_train = FlickrDataset(root_dir=data_train_images_path, captions_file=data_train_captions,
-                                  transform=transforms, data_limit=data_limit, freq_threshold=freq_threshold)
+                                  transform=transforms, data_limit=data_limit, freq_threshold=freq_threshold,
+                                  do_augmentation=True)
     pad_idx = dataset_train.vocab.stoi["<PAD>"]
     sos_idx = dataset_train.vocab.stoi["<SOS>"]
     eos_idx = dataset_train.vocab.stoi["<EOS>"]
@@ -99,9 +100,7 @@ def single_run(
                                                                        max_len=seq_len))
     vocab_size = len(dataset_train.vocab)
 
-
     # Choose 30 pictures to run with along the training of both
-
 
     # Device handling
     device = torch.device(f"cuda:{device_ids[0]}" if torch.cuda.is_available() else "cpu")
@@ -164,7 +163,8 @@ def single_run(
             if run_mode == "transformer":
                 tgt_key_padding_mask = captions == pad_idx  # tgt_key_padding_mask: (T) for unbatched input otherwise (N, T)
                 tgt_key_padding_mask.to(device)
-                outputs = model.module.forward(image, captions, tgt_mask=tgt_mask, tgt_key_padding_mask=tgt_key_padding_mask)
+                outputs = model.module.forward(image, captions, tgt_mask=tgt_mask,
+                                               tgt_key_padding_mask=tgt_key_padding_mask)
                 outputs = outputs[:, :-1]
             else:
                 outputs, attentions = model.module.forward(image, captions)
@@ -195,10 +195,12 @@ def single_run(
                         img = img[:max_val_show, :, :]
                         captions_pred_batch = greedy_decoding(model, img, sos_idx, eos_idx, pad_idx, idx2word,
                                                               max_len=seq_len - 1, device=device, tgt_mask=tgt_mask)
-                        print(epoch_batch_info_str + " T:" + ' '.join(captions_pred_batch[0]))
+                        title = epoch_batch_info_str + f" T{d_model},{dim_feedforward}:" + ' '.join(
+                            captions_pred_batch[0])
+                        print(title)
                         for i, caption in enumerate(captions_pred_batch):
                             caption = ' '.join(caption)
-                            show_image(img[i], title=epoch_batch_info_str + " T:" + caption, tb=tb)
+                            show_image(img[i], title=title, tb=tb)
 
                 else:
                     with torch.no_grad():
@@ -210,7 +212,9 @@ def single_run(
                             caps, alphas = model.module.decoder.generate_caption(features,
                                                                                  vocab=dataset_train.vocab)  # drip: added module for parallelization
                             caption = ' '.join(caps)
-                            show_image(img[0], title=epoch_batch_info_str + " L:" + caption, tb=tb)
+                            title = epoch_batch_info_str + f" L{decoder_dim}:" + caption
+                            print(title)
+                            show_image(img[0], title=title, tb=tb)
 
                 model.train()
 
