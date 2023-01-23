@@ -21,12 +21,12 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from root import cwd
-from link2.data_preprocessing import FlickrDataset, CapsCollate
-from link2.utils import show_image
-from link2.networks_transformer import EncoderDecoderTransformer
-from link2.networks_lstm import EncoderDecoderLSTMAttention
-from link2.data_preprocessing import transforms
-from link2.decoding_utils import greedy_decoding
+from source.data_preprocessing import FlickrDataset, CapsCollate
+from source.utils import show_image
+from source.networks_transformer import EncoderDecoderTransformer
+from source.networks_lstm import EncoderDecoderLSTMAttention
+from source.data_preprocessing import transforms
+from source.decoding_utils import greedy_decoding
 
 
 def single_run(

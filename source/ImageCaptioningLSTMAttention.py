@@ -19,10 +19,10 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from root import cwd
-from link2.data_preprocessing import FlickrDataset, CapsCollate
-from link2.utils import show_image
-from link2.networks_lstm import EncoderDecoderLSTMAttention
-from link2.data_preprocessing import transforms
+from source.data_preprocessing import FlickrDataset, CapsCollate
+from source.utils import show_image
+from source.networks_lstm import EncoderDecoderLSTMAttention
+from source.data_preprocessing import transforms
 
 # locations of the training / validation data
 data_train_images_path = f"{cwd}/data/flickr8k/Flickr8kTrainImages/"
@@ -31,7 +31,7 @@ data_validation_images_path = f"{cwd}/data/flickr8k/Flickr8kTrainImages/"
 data_validation_captions = f"{cwd}/data/flickr8k/captions_train.txt"
 
 id_run = datetime.now().strftime("%Y%m%d_%H%M%S")
-tb = SummaryWriter(log_dir=cwd + "/tensorboard/link2/images_" + id_run)
+tb = SummaryWriter(log_dir=cwd + "/tensorboard/source/images_" + id_run)
 
 # Initiate the Dataset and Dataloader
 # setting the constants

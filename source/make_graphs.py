@@ -2,11 +2,11 @@ import matplotlib
 import matplotlib.pyplot as plt
 
 from definitions import cwd
-from link2.utils import load_file
+from source.utils import load_file
 
 
 def create_loss_vs_size(
-        path="results/exp_20230121_231314.txt"
+        path="long_experiment_results/exp_20230121_231314.txt"
 ):
     full_path = f"{cwd}/{path}"
     s = load_file(full_path)
@@ -57,7 +57,7 @@ def create_loss_vs_size(
     axis[1].plot(transformer_num_params, transformer_run_time_loss, 'b-*', markersize=markersize, label='transformer')
     axis[1].set_xlabel("no. parameters")
     axis[1].set_ylabel("training time[sec]")
-    axis[1].legend()
+    axis[1].legend(loc='center right')
 
     plt.show()
 

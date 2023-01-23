@@ -5,10 +5,10 @@ import pandas as pd
 from PIL import Image
 
 from definitions import cwd
-from link2.data_preprocessing import Vocabulary
-from link2.data_preprocessing import FlickrDataset, transforms, CapsCollate
+from source.data_preprocessing import Vocabulary
+from source.data_preprocessing import FlickrDataset, transforms, CapsCollate
 from nltk.translate.bleu_score import sentence_bleu
-from link2.decoding_utils import greedy_decoding
+from source.decoding_utils import greedy_decoding
 from data_preprocessing import transforms
 
 
@@ -17,7 +17,7 @@ def compute_bleu(
         data_train_captions=f"{cwd}/data/flickr8k/captions_train.txt",
         data_test_images_path=f"{cwd}/data/flickr8k/Flickr8kTestImages/",
         data_test_captions=f"{cwd}/data/flickr8k/captions_test.txt",
-        network_file="transformer_image_caption_model_state_20230122_201849_149.pth",
+        network_file="lstm_image_caption_model_state_20230123_000127_039.pth",
         seq_len=30,
         data_limit=None,
         freq_threshold=2,
@@ -47,20 +47,20 @@ def compute_bleu(
     imgs = df["image"]
     captions = df["caption"]
     img2captions = dict()
-    for i in range(len(imgs)):
+    for i in range(500):
         if imgs[i] not in img2captions.keys():
             img2captions[imgs[i]] = list()
         img2captions[imgs[i]].append(Vocabulary.tokenize(captions[i]))
 
+    full_path = f"{cwd}/models/{network_file}"
+    model = torch.load(full_path).to(device)
+    model.eval()
     bleu = list()
     for i, img in enumerate(imgs):
         img_location = f"{data_test_images_path}/{img}"
         image = Image.open(img_location).convert("RGB")
         image = transforms(image)
         image = image.type(torch.FloatTensor).unsqueeze(0).to(device)
-        full_path = f"{cwd}/models/{network_file}"
-        model = torch.load(full_path).to(device)
-        model.eval()
         with torch.no_grad():
             if "lstm" in network_file:
                 features = model.module.encoder(image.to(device))  # drip: added module for parallelization
@@ -69,8 +69,9 @@ def compute_bleu(
             else:
                 caption = greedy_decoding(model, image, sos_idx, eos_idx, pad_idx, idx2word,
                                                   max_len=seq_len - 1, device=device, tgt_mask=tgt_mask)
+                caption = caption[0]
 
-        score = sentence_bleu(img2captions[img], caption[0])
+        score = sentence_bleu(img2captions[img], caption)
         bleu.append(score)
         if i % 10==0:
             print(f"i-{i} mean = {np.mean(bleu)}")

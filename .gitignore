@@ -1,9 +1,7 @@
 .idea/
 venv/
+data/
+tensorboard/
+models/
+long_experiment_results/
 *pycache*
-imagenet_classes.txt
-*gFlickr8k_text*
-*Flickr8k_Dataset*
-data
-*.pth
-*tensorboard*

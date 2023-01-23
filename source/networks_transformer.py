@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from torch.nn import TransformerDecoderLayer, TransformerDecoder
 
-from link2.networks_lstm import EncoderCNN
+from source.networks_lstm import EncoderCNN
 
 
 class PositionalEncoding(nn.Module):

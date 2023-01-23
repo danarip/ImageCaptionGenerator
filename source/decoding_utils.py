@@ -4,9 +4,9 @@ import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from link2.utils import show_image
-from link2.data_preprocessing import FlickrDataset, CapsCollate
-from link2.data_preprocessing import transforms
+from source.utils import show_image
+from source.data_preprocessing import FlickrDataset, CapsCollate
+from source.data_preprocessing import transforms
 from definitions import cwd
 
 

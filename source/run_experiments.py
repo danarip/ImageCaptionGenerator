@@ -1,5 +1,5 @@
 from datetime import datetime
-from link2.ImageCaptioningUnified import single_run
+from source.ImageCaptioningUnified import single_run
 from definitions import cwd
 
 
@@ -23,6 +23,7 @@ def run_experiments():
     data_limit = None
     num_epochs = 40
     batch_size = 256
+
 
     lines = list()
     res = single_run(run_mode="transformer", num_epochs=num_epochs, data_limit=data_limit, batch_size=batch_size,
