@@ -35,9 +35,9 @@ def split_dataset():
     captions_file = f"{cwd}/data/flickr8k/captions.txt"
 
     # Outputs
-    target_train = f"{cwd}/data/flickr8k/Flickr8kTrain/"
-    target_validation = f"{cwd}/data/flickr8k/Flickr8kValidation/"
-    target_test = f"{cwd}/data/flickr8k/Flickr8kTest/"
+    target_train = f"{cwd}/data/flickr8k/Flickr8kTrainImages/"
+    target_validation = f"{cwd}/data/flickr8k/Flickr8kValidationImages/"
+    target_test = f"{cwd}/data/flickr8k/Flickr8kTestImages/"
     captions_train_file = f"{cwd}/data/flickr8k/captions_train.txt"
     captions_validation_file = f"{cwd}/data/flickr8k/captions_validation.txt"
     captions_test_file = f"{cwd}/data/flickr8k/captions_test.txt"
@@ -47,7 +47,9 @@ def split_dataset():
     captions_dict = dict()
     for line in captions_lines[1:]:
         terms = line.split(",")
-        captions_dict[terms[0]] = line
+        if terms[0] not in captions_dict:
+            captions_dict[terms[0]] = list()
+        captions_dict[terms[0]].append(line)
 
     train_set = file2set(train_file_fullpath)
     print(f"train set {len(train_set)}")
@@ -65,13 +67,13 @@ def split_dataset():
             continue
         if filename in train_set:
             shutil.copy(f"{all_images_folder}/{filename}", f"{target_train}")
-            captions_train.append(captions_dict[filename])
+            captions_train.append("\n".join(captions_dict[filename]))
         if filename in validation_set:
             shutil.copy(f"{all_images_folder}/{filename}", f"{target_validation}")
-            captions_validation.append(captions_dict[filename])
+            captions_validation.append("\n".join(captions_dict[filename]))
         if filename in test_set:
             shutil.copy(f"{all_images_folder}/{filename}", f"{target_test}")
-            captions_test.append(captions_dict[filename])
+            captions_test.append("\n".join(captions_dict[filename]))
 
     savestring2file("\n".join(captions_train), captions_train_file)
     savestring2file("\n".join(captions_validation), captions_validation_file)

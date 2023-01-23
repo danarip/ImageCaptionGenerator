@@ -1,4 +1,5 @@
 import os
+import numpy as np
 import pandas as pd
 from PIL import Image
 from collections import Counter
@@ -17,6 +18,19 @@ transforms = T.Compose([
     T.RandomCrop(224),
     T.ToTensor(),
     T.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+])
+
+transforms_advanced = T.Compose([
+    T.Resize(226),
+    T.RandomCrop(224),
+    T.ToTensor(),
+    T.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+    T.RandomAffine(10),
+    T.RandomGrayscale(0.05),
+    T.RandomHorizontalFlip(0.05),
+    T.RandomVerticalFlip(0.05),
+    T.GaussianBlur(5),
+    T.RandomErasing(0.05)
 ])
 
 
@@ -69,10 +83,15 @@ class FlickrDataset(Dataset):
                  transform=None,
                  freq_threshold=5,
                  vocab=None,
-                 data_limit=None):
+                 data_limit=None,
+                 do_augmentation=False,
+                 augmentation_probability=0.2):
         self.root_dir = root_dir
         self.df = pd.read_csv(captions_file)
         self.transform = transform
+        self.do_augmentation = do_augmentation
+        self.random = np.random.RandomState()
+        self.augmentation_probability = augmentation_probability
 
         # Get image and caption colum from the dataframe
         self.imgs = self.df["image"]
@@ -99,8 +118,10 @@ class FlickrDataset(Dataset):
         img_location = os.path.join(self.root_dir, img_name)
         img = Image.open(img_location).convert("RGB")
 
-        # apply the transfromation to the image
-        if self.transform is not None:
+        # do some random augmentations
+        if self.do_augmentation and (self.random.uniform() < self.augmentation_probability):
+            img = transforms_advanced(img)
+        else:
             img = self.transform(img)
 
         # numericalize the caption text
