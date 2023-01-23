@@ -3,14 +3,16 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from definitions import cwd
-from link2.data_preprocessing import FlickrDataset, transforms, CapsCollate
-from link2.utils import load_file, show_image
-from link2.decoding_utils import greedy_decoding
+from source.data_preprocessing import FlickrDataset, transforms, CapsCollate
+from source.utils import load_file, show_image
+from source.decoding_utils import greedy_decoding
 
 
 def caption_dynamics(
         data_train_images_path=f"{cwd}/data/flickr8k/Flickr8kTrainImages/",
         data_train_captions=f"{cwd}/data/flickr8k/captions_train.txt",
+        data_test_images_path=f"{cwd}/data/flickr8k/Flickr8kTestImages/",
+        data_test_captions=f"{cwd}/data/flickr8k/captions_test.txt",
         path_to_network="models",
         network_files=["lstm_image_caption_model_state_20230121_215058_000.pth",
                        "lstm_image_caption_model_state_20230121_215058_010.pth",
@@ -35,11 +37,11 @@ def caption_dynamics(
         data_limit=None,
         freq_threshold=2,
         num_worker=4,
-        batch_size=64,
-        max_imgs=50
+        batch_size=640,
+        max_imgs=1
 ):
     dataset_train = FlickrDataset(root_dir=data_train_images_path, captions_file=data_train_captions,
-                                  transform=transforms, data_limit=data_limit, freq_threshold=freq_threshold)
+                                  transform=transforms, data_limit=data_limit, freq_threshold=freq_threshold, do_augmentation=False)
     pad_idx = dataset_train.vocab.stoi["<PAD>"]
     sos_idx = dataset_train.vocab.stoi["<SOS>"]
     eos_idx = dataset_train.vocab.stoi["<EOS>"]
@@ -47,22 +49,29 @@ def caption_dynamics(
     data_loader_train = DataLoader(dataset=dataset_train, batch_size=batch_size, num_workers=num_worker, shuffle=False,
                                    collate_fn=CapsCollate(pad_idx=pad_idx, batch_first=True,
                                                           max_len=seq_len))
+    dataset_test = FlickrDataset(root_dir=data_test_images_path, captions_file=data_test_captions,
+                                 transform=transforms, vocab=dataset_train.vocab, data_limit=data_limit)
+    data_loader_test = DataLoader(dataset=dataset_test, batch_size=batch_size, num_workers=num_worker,
+                                  shuffle=True, collate_fn=CapsCollate(pad_idx=pad_idx, batch_first=True,
+                                                                       max_len=seq_len))
+
+
 
     captions = load_file(data_train_captions)
     captions = captions.split("\n")[1:max_imgs+1]
     filenames = [caption.split(",")[0] for caption in captions]
     print(captions)
 
-    tb = SummaryWriter(log_dir=f"{cwd}/tensorboard/caption_dynamics/exp1/")
+    tb = SummaryWriter(log_dir=f"{cwd}/tensorboard/caption_dynamics/exp2/")
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f"device to rune on {device}")
     tgt_mask = torch.nn.Transformer.generate_square_subsequent_mask(seq_len - 1).to(device) != 0
 
-    for i in range(max_imgs):
+    dataiter = iter(data_loader_train)
+    imgs, _ = next(dataiter)
+    imgs = imgs.type(torch.FloatTensor).to(device)
+    for i in range(0, max_imgs*5, 5):
         print(f"i={i}")
-        dataiter = iter(data_loader_train)
-        imgs, _ = next(dataiter)
-        imgs = imgs.type(torch.FloatTensor).to(device)
         for network_file in network_files:
             full_path = f"{cwd}/models/{network_file}"
             model = torch.load(full_path).to(device)

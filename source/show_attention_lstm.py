@@ -4,9 +4,9 @@ import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from link2.utils import show_image
+from source.utils import show_image
 from definitions import cwd
-from link2.data_preprocessing import FlickrDataset, CapsCollate, transforms
+from source.data_preprocessing import FlickrDataset, CapsCollate, transforms
 
 
 # ## 6 Visualizing the attentions

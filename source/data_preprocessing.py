@@ -20,20 +20,6 @@ transforms = T.Compose([
     T.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
 ])
 
-transforms_advanced = T.Compose([
-    T.Resize(226),
-    T.RandomCrop(224),
-    T.ToTensor(),
-    T.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-    T.RandomAffine(10),
-    T.RandomGrayscale(0.05),
-    T.RandomHorizontalFlip(0.05),
-    T.RandomVerticalFlip(0.05),
-    T.GaussianBlur(5),
-    T.RandomErasing(0.05)
-])
-
-
 class Vocabulary:
     def __init__(self, freq_threshold):
         # setting the pre-reserved tokens int to string tokens
@@ -119,10 +105,7 @@ class FlickrDataset(Dataset):
         img = Image.open(img_location).convert("RGB")
 
         # do some random augmentations
-        if self.do_augmentation and (self.random.uniform() < self.augmentation_probability):
-            img = transforms_advanced(img)
-        else:
-            img = self.transform(img)
+        img = self.transform(img)
 
         # numericalize the caption text
         caption_vec = []
