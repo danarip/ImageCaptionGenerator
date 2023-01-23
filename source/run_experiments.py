@@ -1,5 +1,5 @@
 from datetime import datetime
-from source.ImageCaptioningUnified import single_run
+from source.ImageCaptioning import single_run
 from definitions import cwd
 
 
@@ -19,11 +19,10 @@ def save_str_to_file(path, s):
 
 def run_experiments():
     exp_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-    path = f"{cwd}/results/exp_{exp_id}.txt"
+    path = f"{cwd}/long_experiment_results/exp_{exp_id}.txt"
     data_limit = None
     num_epochs = 40
     batch_size = 256
-
 
     lines = list()
     res = single_run(run_mode="transformer", num_epochs=num_epochs, data_limit=data_limit, batch_size=batch_size,
@@ -70,6 +69,7 @@ def run_experiments():
                      decoder_dim=1024)
     lines.append(oredered_dict_to_line(res))
     save_str_to_file(path, "\n".join(lines))
+
 
 if __name__ == "__main__":
     run_experiments()

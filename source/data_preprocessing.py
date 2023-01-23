@@ -10,6 +10,7 @@ from torch.nn.utils.rnn import pad_sequence
 import torchvision.transforms as T
 
 import spacy
+
 spacy_eng = spacy.load("en_core_web_sm")
 
 # defining the transform to be applied
@@ -19,6 +20,20 @@ transforms = T.Compose([
     T.ToTensor(),
     T.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
 ])
+
+transforms_advanced = T.Compose([
+    T.Resize(226),
+    T.RandomCrop(224),
+    T.ToTensor(),
+    T.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+    T.RandomAffine(10),
+    T.RandomGrayscale(0.05),
+    T.RandomHorizontalFlip(0.05),
+    T.RandomVerticalFlip(0.05),
+    T.GaussianBlur(5),
+    T.RandomErasing(0.05)
+])
+
 
 class Vocabulary:
     def __init__(self, freq_threshold):
@@ -75,8 +90,8 @@ class FlickrDataset(Dataset):
         self.root_dir = root_dir
         self.df = pd.read_csv(captions_file)
         self.transform = transform
-        self.do_augmentation = do_augmentation
         self.random = np.random.RandomState()
+        self.do_augmentation = do_augmentation
         self.augmentation_probability = augmentation_probability
 
         # Get image and caption colum from the dataframe
@@ -102,10 +117,13 @@ class FlickrDataset(Dataset):
         caption = self.captions[idx]
         img_name = self.imgs[idx]
         img_location = os.path.join(self.root_dir, img_name)
-        img = Image.open(img_location).convert("RGB")
+        img_pil = Image.open(img_location).convert("RGB")
 
         # do some random augmentations
-        img = self.transform(img)
+        if not self.do_augmentation:
+            img = transforms(img_pil)
+        else:
+            img = transforms_advanced(img_pil)
 
         # numericalize the caption text
         caption_vec = []
@@ -136,7 +154,8 @@ class CapsCollate:
             if targets.shape[1] >= self._max_len:
                 targets = targets[:, :self._max_len]
             else:
-                pad_tensor = torch.ones(size=(targets.shape[0], self._max_len - targets.shape[1]), dtype=torch.long) * self.pad_idx
+                pad_tensor = torch.ones(size=(targets.shape[0], self._max_len - targets.shape[1]),
+                                        dtype=torch.long) * self.pad_idx
                 targets = torch.cat([targets, pad_tensor], dim=1)
 
         return imgs, targets

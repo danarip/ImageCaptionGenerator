@@ -51,3 +51,8 @@ def load_file(path):
     s = f.read()
     f.close()
     return s
+
+
+def get_caption_from_index(idx2word, caption_idx, pad_idx=0):
+    caption_true = " ".join([idx2word[idx] for idx in caption_idx if idx != pad_idx])
+    return caption_true
