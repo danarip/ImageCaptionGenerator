@@ -56,3 +56,12 @@ def load_file(path):
 def get_caption_from_index(idx2word, caption_idx, pad_idx=0):
     caption_true = " ".join([idx2word[idx] for idx in caption_idx if idx != pad_idx])
     return caption_true
+
+
+def caption_true_index_torch_to_words(idx2word, captions, pad_idx=0):
+    captions = captions.tolist()
+    sentences = list()
+    for caption in captions:
+        sentence = " ".join([idx2word[idx] for idx in caption if idx != pad_idx])
+        sentences.append(sentence)
+    return sentences

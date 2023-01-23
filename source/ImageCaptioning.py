@@ -23,7 +23,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from definitions import cwd
 from source.data_preprocessing import FlickrDataset, CapsCollate
-from source.utils import show_image, get_caption_from_index
+from source.utils import show_image, get_caption_from_index, caption_true_index_torch_to_words
 from source.networks_transformer import EncoderDecoderTransformer
 from source.networks_lstm import EncoderDecoderLSTMAttention
 from source.data_preprocessing import transforms
@@ -151,7 +151,6 @@ def single_run(
 
     # 5) Training Job from above configs
     num_batches = len(data_loader_train)
-    num_of_pics_to_show = 3
 
     time_start_training = time.time()
     for epoch in range(num_epochs):
@@ -160,7 +159,6 @@ def single_run(
         for idx, (image, captions) in enumerate(data_loader_train):
             image, captions = image.to(device), captions.to(device)
             captions = captions[:, 0:-1]  # drip
-            # captions = captions[:, 1:]
             # Zero the gradients.
             optimizer.zero_grad()
 
@@ -168,8 +166,7 @@ def single_run(
             if run_mode == "transformer":
                 tgt_key_padding_mask = captions == pad_idx  # tgt_key_padding_mask: (T) for unbatched input otherwise (N, T)
                 tgt_key_padding_mask.to(device)
-                outputs = model.module.forward(image, captions, tgt_mask=tgt_mask,
-                                               tgt_key_padding_mask=tgt_key_padding_mask)
+                outputs = model.module.forward(image, captions, tgt_mask=tgt_mask, tgt_key_padding_mask=tgt_key_padding_mask)
                 outputs = outputs[:, 0:-1]
             else:
                 outputs, attentions = model.module.forward(image, captions)
@@ -191,34 +188,28 @@ def single_run(
 
                 model.eval()
                 # Transformer: sending images and captions to the tensorboard
-                if run_mode == "transformer":
-                    with torch.no_grad():
-                        dataiter = iter(data_loader_validation)
-                        img, caption_true_idx = next(dataiter)
-                        img = img.to(device)
-                        img = img[:max_val_show, :, :]
+                dataiter = iter(data_loader_validation)
+                img, caption_true_idx = next(dataiter)
+                img = img[:max_val_show, :, :].to(device)
+                caption_true = caption_true_index_torch_to_words(idx2word, caption_true_idx)
+                with torch.no_grad():
+                    if run_mode == "transformer":
                         captions_pred_batch = greedy_decoding(model, img, sos_idx, eos_idx, pad_idx, idx2word,
                                                               max_len=seq_len - 1, device=device, tgt_mask=tgt_mask)
                         for i, caption in enumerate(captions_pred_batch):
-                            caption_true = get_caption_from_index(idx2word, caption_true_idx[i].tolist())
                             caption = ' '.join(caption)
-                            title = f"{epoch_batch_info_str} T{d_model},{dim_feedforward}|{caption}|{caption_true}"
+                            title = f"{epoch_batch_info_str} T{d_model},{dim_feedforward}|{caption}|{caption_true[i]}"
                             show_image(img[i], title=title, tb=tb)
-                        print(title)  # show a single title
 
-                else:
-                    with torch.no_grad():
-                        for _ in range(num_of_pics_to_show):
-                            dataiter = iter(data_loader_validation)
-                            img, _ = next(dataiter)
-                            features = model.module.encoder(
-                                img[0:1].to(device))  # drip: added module for parallelization
-                            caps, alphas = model.module.decoder.generate_caption(features,
+                    else:  # run_mode == "lstm"
+                        for i in range(max_val_show):
+                            features = model.module.encoder(img[i:i+1])  # drip: added module for parallelization
+                            caps, alphas = model.module.decoder.generate_caption(features, max_len=seq_len,
                                                                                  vocab=dataset_train.vocab)  # drip: added module for parallelization
                             caption = ' '.join(caps)
-                            title = epoch_batch_info_str + f" L{decoder_dim}:" + caption
-                            print(title)
-                            show_image(img[0], title=title, tb=tb)
+                            title = f"{epoch_batch_info_str} L{decoder_dim}|{caption}|{caption_true[i]}"
+                            show_image(img[i], title=title, tb=tb)
+                    print(title)  # show a single title
 
                 model.train()
 
