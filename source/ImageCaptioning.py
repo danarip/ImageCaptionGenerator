@@ -72,8 +72,8 @@ def single_run(
         dim_feedforward=512,
         dropout=0.3,
 ):
-    local_memory = locals()
-    print(f"{json.dumps(local_memory, sort_keys=True, indent=4)}")
+    # local_memory = locals()
+    # print(f"{json.dumps(local_memory, sort_keys=True, indent=4)}")
     # Running unique ids
     id_run = datetime.now().strftime("%Y%m%d_%H%M%S")
     tb = SummaryWriter(log_dir=f"{cwd}/tensorboard/{tb_run_name}/{run_mode}_images_{id_run}")
