@@ -20,7 +20,7 @@ def get_caps_from(features_tensors, model, device, vocab):
     model.eval()
     with torch.no_grad():
         features = model.encoder(features_tensors.to(device))
-        caps, alphas = model.decoder.generate_caption(features, vocab=vocab)
+        caps, alphas = model.decoder.generate_captions_greedy_lstm(features, vocab=vocab)
         caption = ' '.join(caps)
         show_image(features_tensors[0], title=caption)
 

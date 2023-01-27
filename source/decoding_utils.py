@@ -10,7 +10,7 @@ from source.data_preprocessing import transforms
 from definitions import cwd
 
 
-def greedy_decoding(model, img_batched, sos_id, eos_id, pad_id, idx2word, max_len, device, tgt_mask):
+def greedy_decoding_transformer(model, img_batched, vocab, max_len, device, tgt_mask):
     """Performs greedy decoding for the caption generation.
     At each iteration model predicts the next word in the caption given the previously
     generated words and image features. For the next word we always take the most probable one.
@@ -30,7 +30,7 @@ def greedy_decoding(model, img_batched, sos_id, eos_id, pad_id, idx2word, max_le
     batch_size = img_batched.size(0)
 
     # Define the initial state of decoder input
-    x_words = torch.Tensor([sos_id] + [pad_id] * (max_len - 1)).to(device).long()
+    x_words = torch.Tensor([vocab.sos_idx] + [vocab.pad_idx] * (max_len - 1)).to(device).long()
     x_words = x_words.repeat(batch_size, 1)
     tgt_key_padding_mask = torch.Tensor([True] * max_len).to(device).bool()
     tgt_key_padding_mask = tgt_key_padding_mask.repeat(batch_size, 1)
@@ -41,6 +41,8 @@ def greedy_decoding(model, img_batched, sos_id, eos_id, pad_id, idx2word, max_le
     for _ in range(batch_size):
         generated_captions.append([])
 
+    y_pred_batch_idx = torch.zeros(size=(batch_size, (max_len - 1), len(vocab.itos))).to(device)
+
     for i in range(max_len - 1):
         # Update the padding masks
         tgt_key_padding_mask[:, i] = False
@@ -48,7 +50,9 @@ def greedy_decoding(model, img_batched, sos_id, eos_id, pad_id, idx2word, max_le
         # Get the model prediction for the next word
         y_pred_prob = model.module.forward(img_batched, x_words, tgt_key_padding_mask=tgt_key_padding_mask, tgt_mask=tgt_mask)
         # Extract the prediction from the specific (next word) position of the target sequence
+
         y_pred_prob  = y_pred_prob[:, i, :].clone()
+        y_pred_batch_idx[:, i, :] = y_pred_prob
         # Extract the most probable word
         y_pred = y_pred_prob.argmax(-1)
 
@@ -56,8 +60,8 @@ def greedy_decoding(model, img_batched, sos_id, eos_id, pad_id, idx2word, max_le
             if is_decoded[batch_idx]:
                 continue
             # Add the generated word to the caption
-            generated_captions[batch_idx].append(idx2word[y_pred[batch_idx].item()])
-            if y_pred[batch_idx] == eos_id:
+            generated_captions[batch_idx].append(vocab.itos[y_pred[batch_idx].item()])
+            if y_pred[batch_idx] == vocab.eos_idx:
                 # Caption has been fully generated for this image
                 is_decoded[batch_idx] = True
             
@@ -71,13 +75,13 @@ def greedy_decoding(model, img_batched, sos_id, eos_id, pad_id, idx2word, max_le
     # Complete the caption for images which haven't been fully decoded
     for batch_idx in range(batch_size):
         if not is_decoded[batch_idx]:
-            generated_captions[batch_idx].append(idx2word[eos_id])
+            generated_captions[batch_idx].append(vocab.eos)
 
     # Clean the EOS symbol
     for caption in generated_captions:
-        caption.remove(idx2word[eos_id])
+        caption.remove(vocab.eos)
 
-    return generated_captions
+    return generated_captions, y_pred_batch_idx
 
 
 def idx_batch_to_sentences(idx_batch, idx2word, pad_idx):
@@ -113,8 +117,8 @@ def show_transformer_validation(model,
         orig_caption_words = idx_batch_to_sentences(orig_captions, idx2word, pad_idx)
 
         # greedy_decoding(model, img_features_batched, sos_id, eos_id, pad_id, idx2word, max_len, device):
-        captions_pred_batch = greedy_decoding(model, img, sos_idx, eos_idx, pad_idx, idx2word, max_len=max_len - 1,
-                                              device=device)
+        captions_pred_batch = greedy_decoding_transformer(model, img, sos_idx, eos_idx, pad_idx, idx2word, max_len=max_len - 1,
+                                                          device=device)
         captions_pred_batch = captions_pred_batch[:batch_size_val]
 
         for i, caption in enumerate(captions_pred_batch):

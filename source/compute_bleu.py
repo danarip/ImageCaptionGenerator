@@ -8,7 +8,7 @@ from definitions import cwd
 from source.data_preprocessing import Vocabulary
 from source.data_preprocessing import FlickrDataset, transforms, CapsCollate
 from nltk.translate.bleu_score import sentence_bleu
-from source.decoding_utils import greedy_decoding
+from source.decoding_utils import greedy_decoding_transformer
 from data_preprocessing import transforms
 
 
@@ -64,11 +64,11 @@ def compute_bleu(
         with torch.no_grad():
             if "lstm" in network_file:
                 features = model.module.encoder(image.to(device))  # drip: added module for parallelization
-                caption, _ = model.module.decoder.generate_caption(features,
-                                                                     vocab=dataset_train.vocab)  # drip: added module for parallelization
+                caption, _ = model.module.decoder.generate_captions_greedy_lstm(features,
+                                                                                vocab=dataset_train.vocab)  # drip: added module for parallelization
             else:
-                caption = greedy_decoding(model, image, sos_idx, eos_idx, pad_idx, idx2word,
-                                                  max_len=seq_len - 1, device=device, tgt_mask=tgt_mask)
+                caption = greedy_decoding_transformer(model, image, sos_idx, eos_idx, pad_idx, idx2word,
+                                                      max_len=seq_len - 1, device=device, tgt_mask=tgt_mask)
                 caption = caption[0]
 
         score = sentence_bleu(img2captions[img], caption)
