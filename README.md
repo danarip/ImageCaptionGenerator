@@ -5,6 +5,8 @@ By: Dana Rip
 In this git we introduce a comparison for image captioning: we implement a transformer and a lstm
 with attention. Both architectures are based on encoder of ResNet50. 
 
+![Architectures of the LSTM](figures/Caption_examples.png)
+
 ## Files
 - Under `source/tst` there are several scripts that run the pipline. These are the entry point scripts for operating the comparison.
   - `source/tst/tst_lstm_short.py` - runs a relatively short test to examine the lstm architecture
@@ -59,6 +61,16 @@ models/                   # will contain the models saves of the ImageCaption.py
 long_experiment_results/  # Will contain long experiments results.
 tensorboard/              # Will contain the tensorboard graphs and images.
 ```
+
+## Architectures of the LSTM
+![Architectures of the LSTM](figures/LSTM_arch.png)
+
+## Architectures of the Transformer
+![Architectures of the Transformer](figures/Transformer_arch.png)
+
+## Some Results 
+![Results](figures/Results.png)
+
 
 ## Attribution
 Parts of the code here are based mainly on two other repositories:
