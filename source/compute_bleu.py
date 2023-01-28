@@ -77,6 +77,5 @@ def compute_bleu(
             print(f"i-{i} mean = {np.mean(bleu)}")
 
 
-
 if __name__ == "__main__":
     compute_bleu()

@@ -73,18 +73,18 @@ def single_run(
 
         # locations of the training / validation data #
         data_train_images_path=f"{cwd}/data/flickr8k/Flickr8kTrainImages/",  # Input: train Flickr images
-        data_train_captions=f"{cwd}/data/flickr8k/captions_train.txt",  # Input  #
-        data_validation_images_path=f"{cwd}/data/flickr8k/Flickr8kValidationImages/",
-        data_validation_captions=f"{cwd}/data/flickr8k/captions_validation.txt",
-        data_test_images_path=f"{cwd}/data/flickr8k/Flickr8kTestImages/",
-        data_test_captions=f"{cwd}/data/flickr8k/captions_test.txt",
-        do_augmentation=False,
+        data_train_captions=f"{cwd}/data/flickr8k/captions_train.txt",  # Input: captions of Flickr train
+        data_validation_images_path=f"{cwd}/data/flickr8k/Flickr8kValidationImages/",  # validation images
+        data_validation_captions=f"{cwd}/data/flickr8k/captions_validation.txt",  # validation captions
+        data_test_images_path=f"{cwd}/data/flickr8k/Flickr8kTestImages/",  # test images
+        data_test_captions=f"{cwd}/data/flickr8k/captions_test.txt",  # test captions
+        do_augmentation=False,  # wheter we would like to have images augmentations.
 
         # Running parameters #
-        freq_threshold=2,
-        batch_size=256,
-        data_limit=512,  # dbg
-        max_val_show=10,  # tsb
+        freq_threshold=2,  # minimal number of words in the vocabulary
+        batch_size=256,  # batch size
+        data_limit=512,  # debug: limit the dataset for quick run. None skip this limit.
+        max_val_show=10,  #
         num_worker=4,
         learning_rate=1e-3,
         num_epochs=100,
