@@ -31,10 +31,13 @@ the work graphs.
 from words to indices, etc. 
 
 ## Generated folder structure (not included in this git)
+The flickr8k dataset need to be in the folder `data/flickr8k/Images/`
+
+The dataset can be downloaded from https://www.kaggle.com/datasets/shadabhussain/flickr8k or from 
+https://www.kaggle.com/datasets/adityajn105/flickr8k. The images should be extracted to `data/flickr8k/Images/`.
+
 The following files are not necessary are given in this git. For example, the images are just to 
 big to be included in this git.
-
-
 
 ```
 data/                     # folder that contains the data
