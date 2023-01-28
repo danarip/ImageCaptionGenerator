@@ -1,6 +1,6 @@
 .idea/
 venv/
-data/
+data/flickr8k/Flickr8K*Images/
 tensorboard/
 models/
 long_experiment_results/

@@ -30,6 +30,30 @@ the work graphs.
 - `utils.py` - small scipts to support other functions like transforming from indices to words, 
 from words to indices, etc. 
 
+## Generated folder structure (not included in this git)
+The following files are not necessary are given in this git. For example, the images are just to 
+big to be included in this git.
+
+
+
+```
+data/                     # folder that contains the data
+  Flickr8kTestImages/     # Created by split_dataset.py-  contains the test images.
+  Flickr8kTrainImages/    # Created by split_dataset.py
+  Flickr8kValidationImages/     # Created by split_dataset.py
+  Images/                 # Download to here all the Flickr8k dataset images. The split will be based on this folder
+  captions.txt            # Original captions.txt file
+  captions_test.txt       # Creates by split_dataset.py. Contains captions of test.
+  captions_train.txt      # Creates by split_dataset.py. Contains captions of train.
+  captions_validation.txt     # Creates by split_dataset.py. Contains captions of validation.
+  Flickr_8k.testImages.txt    # Input file. The list of test images
+  Flickr_8k.trainImages.txt   # Input file. The list of train images
+  Flickr_8k.validationImages.txt   # Input file. The list of validation images  
+models/                   # will contain the models saves of the ImageCaption.py
+long_experiment_results/  # Will contain long experiments results.
+tensorboard/              # Will contain the tensorboard graphs and images.
+```
+
 ## Attribution
 Parts of the code here are based mainly on two other repositories:
 For the lstm part we based our code on https://github.com/sgrvinod/a-PyTorch-Tutorial-to-Image-Captioning, 
