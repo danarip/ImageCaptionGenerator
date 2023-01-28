@@ -23,31 +23,68 @@ from torch.utils.tensorboard import SummaryWriter
 
 from definitions import cwd
 from source.data_preprocessing import FlickrDataset, CapsCollate
-from source.utils import show_image, get_caption_from_index, caption_true_index_torch_to_words
+from source import utils
 from source.networks_transformer import EncoderDecoderTransformer
 from source.networks_lstm import EncoderDecoderLSTMAttention
 from source.data_preprocessing import transforms
-from source.decoding_utils import greedy_decoding
+from source.decoding_utils import greedy_decoding_transformer
+
+
+def compute_loss_on_dataset(model,
+                            data_loader_validation,
+                            device,
+                            criterion,
+                            run_mode,
+                            vocab,
+                            seq_len,
+                            tgt_mask=None):
+    loss_val = 0
+    num_samples_val = 0
+    model.eval()
+    with torch.no_grad():
+        for idx, (img, captions) in enumerate(data_loader_validation):
+            img, captions = img.to(device), captions.to(device)
+            # captions = captions[:, 1:]
+
+            if run_mode == "transformer":
+                captions_pred_idx, captions_pred_prob = greedy_decoding_transformer(model, img, vocab,
+                                                                                    max_len=seq_len,
+                                                                                    device=device, tgt_mask=tgt_mask)
+            else:  # run_mode == "lstm"
+                features = model.module.encoder(img)  # drip: added module for parallelization
+                captions_pred_idx, alphas, captions_pred_prob = model.module.decoder.generate_captions_greedy_lstm(
+                    features,
+                    max_len=seq_len,
+                    vocab=vocab)
+
+                # Calculate the batch loss.
+            targets = captions[:, 1:]
+            loss = criterion(captions_pred_prob.contiguous().view(-1, vocab.size()), targets.reshape(-1))
+            loss_val += loss.item()
+            num_samples_val += img.shape[0]
+    model.train()
+
+    return loss_val, num_samples_val
 
 
 def single_run(
         run_mode="lstm",  # Can be lstm or transformer
-        tb_run_name="cleaning01",
+        tb_run_name="cleaning01",  # Tensorboard sub-folder to keep the results.
 
         # locations of the training / validation data #
-        data_train_images_path=f"{cwd}/data/flickr8k/Flickr8kTrainImages/",
-        data_train_captions=f"{cwd}/data/flickr8k/captions_train.txt",
-        data_validation_images_path=f"{cwd}/data/flickr8k/Flickr8kValidationImages/",
-        data_validation_captions=f"{cwd}/data/flickr8k/captions_validation.txt",
-        data_test_images_path=f"{cwd}/data/flickr8k/Flickr8kTestImages/",
-        data_test_captions=f"{cwd}/data/flickr8k/captions_test.txt",
-        do_augmentation=False,
+        data_train_images_path=f"{cwd}/data/flickr8k/Flickr8kTrainImages/",  # Input: train Flickr images
+        data_train_captions=f"{cwd}/data/flickr8k/captions_train.txt",  # Input: captions of Flickr train
+        data_validation_images_path=f"{cwd}/data/flickr8k/Flickr8kValidationImages/",  # validation images
+        data_validation_captions=f"{cwd}/data/flickr8k/captions_validation.txt",  # validation captions
+        data_test_images_path=f"{cwd}/data/flickr8k/Flickr8kTestImages/",  # test images
+        data_test_captions=f"{cwd}/data/flickr8k/captions_test.txt",  # test captions
+        do_augmentation=False,  # wheter we would like to have images augmentations.
 
         # Running parameters #
-        freq_threshold=2,
-        batch_size=256,
-        data_limit=512,  # dbg
-        max_val_show=10,  # tsb
+        freq_threshold=2,  # minimal number of words in the vocabulary
+        batch_size=256,  # batch size
+        data_limit=512,  # debug: limit the dataset for quick run. None skip this limit.
+        max_val_show=10,  #
         num_worker=4,
         learning_rate=1e-3,
         num_epochs=100,
@@ -72,8 +109,8 @@ def single_run(
         dim_feedforward=512,
         dropout=0.3,
 ):
-    local_memory = locals()
-    print(f"{json.dumps(local_memory, sort_keys=True, indent=4)}")
+    # local_memory = locals()
+    # print(f"{json.dumps(local_memory, sort_keys=True, indent=4)}")
     # Running unique ids
     id_run = datetime.now().strftime("%Y%m%d_%H%M%S")
     tb = SummaryWriter(log_dir=f"{cwd}/tensorboard/{tb_run_name}/{run_mode}_images_{id_run}")
@@ -82,28 +119,28 @@ def single_run(
     dataset_train = FlickrDataset(root_dir=data_train_images_path, captions_file=data_train_captions,
                                   transform=transforms, data_limit=data_limit, freq_threshold=freq_threshold,
                                   do_augmentation=do_augmentation)
-    pad_idx = dataset_train.vocab.stoi["<PAD>"]
-    sos_idx = dataset_train.vocab.stoi["<SOS>"]
-    eos_idx = dataset_train.vocab.stoi["<EOS>"]
-    idx2word = dataset_train.vocab.itos
+    vocab = dataset_train.vocab
     data_loader_train = DataLoader(dataset=dataset_train, batch_size=batch_size, num_workers=num_worker, shuffle=True,
-                                   collate_fn=CapsCollate(pad_idx=pad_idx, batch_first=True,
+                                   collate_fn=CapsCollate(vocab=vocab, batch_first=True,
                                                           max_len=seq_len))
 
     # Validation dataset and dataloader
     dataset_validation = FlickrDataset(root_dir=data_validation_images_path, captions_file=data_validation_captions,
                                        transform=transforms, vocab=dataset_train.vocab, data_limit=data_limit)
     data_loader_validation = DataLoader(dataset=dataset_validation, batch_size=batch_size, num_workers=num_worker,
-                                        shuffle=True, collate_fn=CapsCollate(pad_idx=pad_idx, batch_first=True,
+                                        shuffle=True, collate_fn=CapsCollate(vocab=vocab, batch_first=True,
                                                                              max_len=seq_len))
     dataset_test = FlickrDataset(root_dir=data_test_images_path, captions_file=data_test_captions,
                                  transform=transforms, vocab=dataset_train.vocab, data_limit=data_limit)
     data_loader_test = DataLoader(dataset=dataset_test, batch_size=batch_size, num_workers=num_worker,
-                                  shuffle=True, collate_fn=CapsCollate(pad_idx=pad_idx, batch_first=True,
+                                  shuffle=True, collate_fn=CapsCollate(vocab=vocab, batch_first=True,
                                                                        max_len=seq_len))
     vocab_size = len(dataset_train.vocab)
-    print(f"lengths(samples): dataset_train={len(dataset_train)}, dataset_validation={len(dataset_validation)}, dataset_test={len(dataset_test)}")
-    print(f"lengths(batches): data_loader_train={len(data_loader_train)}, data_loader_validation={len(data_loader_validation)}, data_loader_test={len(data_loader_test)}, vocab_size={vocab_size}")
+    max_val_show = min(max_val_show, batch_size)
+    print(
+        f"lengths(samples): dataset_train={len(dataset_train)}, dataset_validation={len(dataset_validation)}, dataset_test={len(dataset_test)}")
+    print(
+        f"lengths(batches): data_loader_train={len(data_loader_train)}, data_loader_validation={len(data_loader_validation)}, data_loader_test={len(data_loader_test)}, vocab_size={vocab_size}")
 
     # Choose 30 pictures to run with along the training of both
 
@@ -111,6 +148,8 @@ def single_run(
     device = torch.device(f"cuda:{device_ids[0]}" if torch.cuda.is_available() else "cpu")
     print(f"device to run on {device}")
 
+    tgt_mask = None if run_mode == "lstm" else nn.Transformer.generate_square_subsequent_mask(seq_len).to(
+        device) != 0
     # Defining the Model Architecture
     if run_mode == "transformer":
         model = EncoderDecoderTransformer(
@@ -128,7 +167,6 @@ def single_run(
         number_parameters = model.num_parameters
         # Explanation: https://pytorch.org/docs/stable/generated/torch.nn.Transformer.html
         # Square TxT mask for decoder, so the transformer won't cheat during the training and testing.
-        tgt_mask = nn.Transformer.generate_square_subsequent_mask(seq_len - 1).to(device) != 0
     elif run_mode == "lstm":
         model = EncoderDecoderLSTMAttention(
             embed_size=embed_size,
@@ -154,25 +192,27 @@ def single_run(
 
     time_start_training = time.time()
     for epoch in range(num_epochs):
+        time_start_epoch = time.time()
         loss_train = 0
         num_samples_train = 0
         for idx, (image, captions) in enumerate(data_loader_train):
             image, captions = image.to(device), captions.to(device)
-            captions = captions[:, 0:-1]  # drip
+            targets = captions[:, 1:]
+
             # Zero the gradients.
             optimizer.zero_grad()
 
             # Feed forward training
             if run_mode == "transformer":
-                tgt_key_padding_mask = captions == pad_idx  # tgt_key_padding_mask: (T) for unbatched input otherwise (N, T)
+                tgt_key_padding_mask = captions == vocab.pad_idx  # tgt_key_padding_mask: (T) for unbatched input otherwise (N, T)
                 tgt_key_padding_mask.to(device)
-                outputs = model.module.forward(image, captions, tgt_mask=tgt_mask, tgt_key_padding_mask=tgt_key_padding_mask)
+                outputs = model.module.forward(image, captions, tgt_mask=tgt_mask,
+                                               tgt_key_padding_mask=tgt_key_padding_mask)
                 outputs = outputs[:, 0:-1]
             else:
-                outputs, attentions = model.module.forward(image, captions)
+                outputs, attentions = model.module.forward(image, captions[:, 0:-1], seq_len)
 
             # Calculate the batch loss.
-            targets = captions[:, 1:]
             loss = criterion(outputs.contiguous().view(-1, vocab_size), targets.reshape(-1))
 
             # Backward pass.
@@ -184,6 +224,7 @@ def single_run(
             optimizer.step()
 
             if idx % print_every == 0:
+                time_start_tb = time.time()
                 epoch_batch_info_str = f"E{epoch:03d}/{num_epochs:03d} I{idx:03d}/{num_batches:03d} loss={loss_train / num_samples_train:.5f} device={device}"
 
                 model.eval()
@@ -191,52 +232,46 @@ def single_run(
                 dataiter = iter(data_loader_validation)
                 img, caption_true_idx = next(dataiter)
                 img = img[:max_val_show, :, :].to(device)
-                caption_true = caption_true_index_torch_to_words(idx2word, caption_true_idx)
+                captions_true_words = utils.captions_to_words(caption_true_idx.tolist(), dataset_train.vocab)
+                captions_true_sentences = utils.words_to_sentences(captions_true_words)
                 with torch.no_grad():
                     if run_mode == "transformer":
-                        captions_pred_batch = greedy_decoding(model, img, sos_idx, eos_idx, pad_idx, idx2word,
-                                                              max_len=seq_len - 1, device=device, tgt_mask=tgt_mask)
+                        captions_pred_batch, y_pred_batch = greedy_decoding_transformer(model, img, vocab,
+                                                                                        max_len=seq_len,
+                                                                                        device=device,
+                                                                                        tgt_mask=tgt_mask)
                         for i, caption in enumerate(captions_pred_batch):
                             caption = ' '.join(caption)
-                            title = f"{epoch_batch_info_str} T{d_model},{dim_feedforward}|{caption}|{caption_true[i]}"
-                            show_image(img[i], title=title, tb=tb)
+                            title = f"{epoch_batch_info_str} T{d_model},{dim_feedforward}|{caption}|{captions_true_sentences[i]}"
+                            utils.show_image(img[i], title=title, tb=tb)
 
                     else:  # run_mode == "lstm"
+                        features = model.module.encoder(img)  # drip: added module for parallelization
+                        captions_pred_idx, alphas, captions_pred_prob = model.module.decoder.generate_captions_greedy_lstm(
+                            features,
+                            max_len=seq_len,
+                            vocab=dataset_train.vocab)  # drip: added module for parallelization
+                        captions_pred_idx = captions_pred_idx.tolist()
+                        captions_pred_words = utils.captions_to_words(captions_pred_idx, vocab=vocab)
+                        caption_sentences = utils.words_to_sentences(captions_pred_words)
                         for i in range(max_val_show):
-                            features = model.module.encoder(img[i:i+1])  # drip: added module for parallelization
-                            caps, alphas = model.module.decoder.generate_caption(features, max_len=seq_len,
-                                                                                 vocab=dataset_train.vocab)  # drip: added module for parallelization
-                            caption = ' '.join(caps)
-                            title = f"{epoch_batch_info_str} L{decoder_dim}|{caption}|{caption_true[i]}"
-                            show_image(img[i], title=title, tb=tb)
-                    print(title)  # show a single title
-
+                            title = f"{epoch_batch_info_str} L{decoder_dim}|{caption_sentences[i]}|{captions_true_sentences[i]}"
+                            utils.show_image(img[i], title=title, tb=tb)
+                print(title)  # show a single title
                 model.train()
+                print(f"tb time={time.time() - time_start_tb}")
+        print(f"epoch_time={time.time() - time_start_epoch}")
 
         loss_train_mean = loss_train / num_samples_train
         # Compute validation loss
-        loss_val = 0
-        num_samples_val = 0
-        for idx, (image, captions) in enumerate(data_loader_validation):
-            image, captions = image.to(device), captions.to(device)
-            captions = captions[:, 1:]
-            # Zero the gradients.
-            optimizer.zero_grad()
-
-            # Feed forward
-            if run_mode == "transformer":
-                tgt_key_padding_mask = captions != pad_idx  # tgt_key_padding_mask: (T) for unbatched input otherwise (N, T)
-                tgt_key_padding_mask.to(device)
-                outputs = model.module.forward(image, captions, tgt_mask=tgt_mask)
-                outputs = outputs[:, :-1]
-            else:
-                outputs, attentions = model(image, captions)
-
-            # Calculate the batch loss.
-            targets = captions[:, 1:]
-            loss = criterion(outputs.contiguous().view(-1, vocab_size), targets.reshape(-1))
-            loss_val += loss.item()
-            num_samples_val += image.shape[0]
+        loss_val, num_samples_val = compute_loss_on_dataset(model,
+                                                            data_loader_validation,
+                                                            device,
+                                                            criterion,
+                                                            run_mode,
+                                                            vocab,
+                                                            seq_len,
+                                                            tgt_mask=tgt_mask)
 
         loss_val_mean = loss_val / num_samples_val
         print(f"loss_train_mean={loss_train_mean})")
@@ -257,29 +292,16 @@ def single_run(
             memory_size = os.stat(model_save_filename).st_size / (1024 * 1024)
             print(f"save model {model_save_filename} size is {memory_size:.2f}MB")
 
-    loss_test = 0
-    num_samples_test = 0
-    for idx, (image, captions) in enumerate(data_loader_test):
-        image, captions = image.to(device), captions.to(device)
-        captions = captions[:, 1:]
-        # Zero the gradients.
-        optimizer.zero_grad()
-
-        # Feed forward
-        if run_mode == "transformer":
-            tgt_key_padding_mask = captions != pad_idx  # tgt_key_padding_mask: (T) for unbatched input otherwise (N, T)
-            tgt_key_padding_mask.to(device)
-            outputs = model.module.forward(image, captions, tgt_mask=tgt_mask)
-            outputs = outputs[:, :-1]
-        else:
-            outputs, attentions = model(image, captions)
-
-        # Calculate the batch loss.
-        targets = captions[:, 1:]
-        loss = criterion(outputs.contiguous().view(-1, vocab_size), targets.reshape(-1))
-        loss_test += loss.item()
-        num_samples_test += image.shape[0]
+    loss_test, num_samples_test = compute_loss_on_dataset(model,
+                                                          data_loader_test,
+                                                          device,
+                                                          criterion,
+                                                          run_mode,
+                                                          vocab,
+                                                          seq_len,
+                                                          tgt_mask=tgt_mask)
     loss_test_mean = loss_test / num_samples_test
+    print(f"loss_train_mean={loss_train_mean})")
     print(f"loss_test_mean={loss_test_mean})")
 
     total_run_time = time.time() - time_start_training
@@ -294,7 +316,7 @@ def single_run(
     result["loss_test_mean"] = loss_test_mean
     result["memory_size"] = memory_size
     result["total_run_time"] = total_run_time
-    result["locals"] = local_memory
+    # result["locals"] = local_memory
     return result
 
 

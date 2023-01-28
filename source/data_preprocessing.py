@@ -38,7 +38,18 @@ transforms_advanced = T.Compose([
 class Vocabulary:
     def __init__(self, freq_threshold):
         # setting the pre-reserved tokens int to string tokens
-        self.itos = {0: "<PAD>", 1: "<SOS>", 2: "<EOS>", 3: "<UNK>"}
+        self.pad_idx = 0
+        self.sos_idx = 1
+        self.eos_idx = 2
+        self.unk_idx = 3
+        self.pad = "<PAD>"
+        self.sos = "<SOS>"
+        self.eos = "<EOS>"
+        self.unk = "<UNK>"
+        self.itos = {self.pad_idx: self.pad,
+                     self.sos_idx: self.sos,
+                     self.eos_idx: self.eos,
+                     self.unk_idx: self.unk}
 
         # string to int tokens
         # its reverse dict self.itos
@@ -47,6 +58,9 @@ class Vocabulary:
         self.freq_threshold = freq_threshold
 
     def __len__(self):
+        return len(self.itos)
+
+    def size(self):
         return len(self.itos)
 
     @staticmethod
@@ -139,8 +153,9 @@ class CapsCollate:
     Collate to apply the padding to the captions with dataloader
     """
 
-    def __init__(self, pad_idx, batch_first=False, max_len=0):
-        self.pad_idx = pad_idx
+    def __init__(self, vocab, batch_first=False, max_len=0):
+        self.pad_idx = vocab.pad_idx
+        self.eos_idx = vocab.eos_idx
         self.batch_first = batch_first
         self._max_len = max_len
 
@@ -158,4 +173,5 @@ class CapsCollate:
                                         dtype=torch.long) * self.pad_idx
                 targets = torch.cat([targets, pad_tensor], dim=1)
 
+        targets[:, -1] = targets[:, -1].where(targets[:, -1] == self.pad_idx, torch.tensor(self.eos_idx))
         return imgs, targets

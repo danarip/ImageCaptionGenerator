@@ -58,10 +58,18 @@ def get_caption_from_index(idx2word, caption_idx, pad_idx=0):
     return caption_true
 
 
-def caption_true_index_torch_to_words(idx2word, captions, pad_idx=0):
-    captions = captions.tolist()
-    sentences = list()
-    for caption in captions:
-        sentence = " ".join([idx2word[idx] for idx in caption if idx != pad_idx])
-        sentences.append(sentence)
-    return sentences
+def captions_to_words(captions_indices,  # input is captions as indices
+                      vocab):
+    captions_words = list()
+    for caption_index in captions_indices:
+        captions_word = list()
+        for idx in caption_index:
+            captions_word.append(vocab.itos[idx])
+            if vocab.eos_idx is not None and idx==vocab.eos_idx:
+                break
+        captions_words.append(captions_word)
+    return captions_words
+
+
+def words_to_sentences(words):
+    return [" ".join(caption) for caption in words]

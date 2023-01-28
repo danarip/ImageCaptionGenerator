@@ -79,7 +79,7 @@ class DecoderLSTMAttention(nn.Module):
         self.num_parameters = pytorch_total_params = sum(p.numel() for p in self.parameters())
         print(f"no. DecoderLSTMAttention={self.num_parameters:,}")
 
-    def forward(self, features, captions):
+    def forward(self, features, captions, seq_len):
 
         # vectorize the caption
         embeds = self.embedding(captions)
@@ -88,15 +88,15 @@ class DecoderLSTMAttention(nn.Module):
         h, c = self.init_hidden_state(features)  # h, c=1024x512=(batch_size, decoder_dim)
 
         # get the seq length to iterate
-        seq_length = len(captions[0]) - 1  # Exclude the last one
-        batch_size = captions.size(0)
+        batch_size = captions.shape[0]
         num_features = features.size(1)
 
-        preds = torch.zeros(batch_size, seq_length, self.vocab_size).to(self.device)
-        alphas = torch.zeros(batch_size, seq_length, num_features).to(self.device)
+        preds = torch.zeros(batch_size, seq_len - 1, self.vocab_size).to(self.device)
+        alphas = torch.zeros(batch_size, seq_len - 1, num_features).to(self.device)
 
-        for s in range(seq_length):
-            alpha, context = self.attention(features, h)  # features: 1024x49x2048, h: 1024x512, context:1024x2048, alpha:1024x49
+        for s in range(seq_len-1):
+            alpha, context = self.attention(features,
+                                            h)  # features: 1024x49x2048, h: 1024x512, context:1024x2048, alpha:1024x49
             lstm_input = torch.cat((embeds[:, s], context), dim=1)
             h, c = self.lstm_cell(lstm_input, (h, c))
 
@@ -107,7 +107,7 @@ class DecoderLSTMAttention(nn.Module):
 
         return preds, alphas
 
-    def generate_caption(self, features, max_len=20, vocab=None):
+    def generate_captions_greedy_lstm(self, features, max_len, vocab):
         # Inference part
         # Given the image features generate the captions
 
@@ -117,37 +117,35 @@ class DecoderLSTMAttention(nn.Module):
         alphas = []
 
         # starting input
-        word = torch.tensor(vocab.stoi['<SOS>']).view(1, -1).to(self.device)
-        embeds = self.embedding(word)
+        predicted_word_idx = (vocab.stoi['<SOS>'] * torch.ones(size=(batch_size,), dtype=torch.long)).to(self.device)
+        embeds = self.embedding(predicted_word_idx)
 
-        captions = []
+        captions = torch.zeros(size=(batch_size, max_len - 1), dtype=torch.long).to(features.device)
+        captions_prob = torch.zeros(size=(batch_size, max_len - 1, vocab.size()), dtype=torch.float).to(features.device)
 
-        for i in range(max_len):
+        for i in range(max_len-1):
             alpha, context = self.attention(features, h)
 
             # store the alpha score
             alphas.append(alpha.cpu().detach().numpy())
 
-            lstm_input = torch.cat((embeds[:, 0], context), dim=1)
+            lstm_input = torch.cat((embeds, context), dim=1)
             h, c = self.lstm_cell(lstm_input, (h, c))
-            output = self.fcn(self.drop(h))
-            output = output.view(batch_size, -1)
+            output_prob = self.fcn(self.drop(h))
+            output_prob = output_prob.view(batch_size, -1)
 
             # select the word with most val
-            predicted_word_idx = output.argmax(dim=1)
+            predicted_word_idx = output_prob.argmax(dim=1)
 
             # save the generated word
-            captions.append(predicted_word_idx.item())
-
-            # end if <EOS detected>
-            if vocab.itos[predicted_word_idx.item()] == "<EOS>":
-                break
+            captions[:, i] = predicted_word_idx
+            captions_prob[:, i, :] = output_prob
 
             # send generated word as the next caption
-            embeds = self.embedding(predicted_word_idx.unsqueeze(0))
+            embeds = self.embedding(predicted_word_idx)
 
         # covert the vocab idx to words and return sentence
-        return [vocab.itos[idx] for idx in captions], alphas
+        return captions, alphas, captions_prob
 
     def init_hidden_state(self,
                           encoder_out  # 1024 x 49 x 2048 <> Batch x square_resnet x rep length
@@ -183,10 +181,7 @@ class EncoderDecoderLSTMAttention(nn.Module):
         self.num_parameters = pytorch_total_params = sum(p.numel() for p in self.parameters())
         print(f"no. EncoderDecoderLSTMAttention={self.num_parameters:,}")
 
-    def forward(self, images, captions):
+    def forward(self, images, captions, seq_len):
         features = self.encoder(images)
-        outputs = self.decoder(features, captions)
+        outputs = self.decoder(features, captions, seq_len)
         return outputs
-
-
-

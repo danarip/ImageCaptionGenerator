@@ -8,11 +8,13 @@ if __name__ == "__main__":
         num_epochs=10,
         data_limit=None,
         batch_size=512,  # Suitable for 2 x A5000 GPUs
-        seq_len=30,  # Sequence length (for padding)
+        seq_len=15,  # Sequence length (for padding)
         embed_size=256,  # Embedding of words
         # LSTM params
         attention_dim=256,
         encoder_dim=2048,
-        decoder_dim=256
+        decoder_dim=256,
+        print_every=10,
+        num_worker=4
     )
     print(f"result={res}")

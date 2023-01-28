@@ -5,10 +5,10 @@ if __name__ == "__main__":
         tb_run_name="tst_transformer_short",
         run_mode="transformer",
         freq_threshold=5,
-        num_epochs=10,
-        data_limit=None,
-        batch_size=512,  # Suitable for 2 x A5000 GPUs
-        seq_len=30,  # Sequence length (for padding)
+        num_epochs=1,
+        data_limit=128,
+        batch_size=128,  # Suitable for 2 x A5000 GPUs
+        seq_len=15,  # Sequence length (for padding)
         embed_size=256,  # Embedding of words
         # Transformer params
         num_decoder_layers=4,

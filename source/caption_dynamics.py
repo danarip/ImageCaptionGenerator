@@ -5,7 +5,7 @@ from torch.utils.tensorboard import SummaryWriter
 from definitions import cwd
 from source.data_preprocessing import FlickrDataset, transforms, CapsCollate
 from source.utils import load_file, show_image
-from source.decoding_utils import greedy_decoding
+from source.decoding_utils import greedy_decoding_transformer
 
 
 def caption_dynamics(
@@ -79,13 +79,13 @@ def caption_dynamics(
             with torch.no_grad():
                 if "lstm" in network_file:
                     features = model.module.encoder(imgs[i:i+1].to(device))  # drip: added module for parallelization
-                    caps, alphas = model.module.decoder.generate_caption(features,
-                                                                         vocab=dataset_train.vocab)  # drip: added module for parallelization
+                    caps, alphas = model.module.decoder.generate_captions_greedy_lstm(features,
+                                                                                      vocab=dataset_train.vocab)  # drip: added module for parallelization
                     caption = ' '.join(caps)
                     print(caption)
                 else:
-                    captions_pred_batch = greedy_decoding(model, imgs[i:i+1], sos_idx, eos_idx, pad_idx, idx2word,
-                                                          max_len=seq_len - 1, device=device, tgt_mask=tgt_mask)
+                    captions_pred_batch = greedy_decoding_transformer(model, imgs[i:i + 1], sos_idx, eos_idx, pad_idx, idx2word,
+                                                                      max_len=seq_len - 1, device=device, tgt_mask=tgt_mask)
                     caption = ' '.join(captions_pred_batch[0])
                     print(caption)
                 show_image(imgs[i], title=f"{i} {network_file} {caption}", tb=tb)
