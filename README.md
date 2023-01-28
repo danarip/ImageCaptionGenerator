@@ -71,7 +71,6 @@ tensorboard/              # Will contain the tensorboard graphs and images.
 ## Some Results 
 ![Results](figures/Results.png)
 
-
 ## Attribution
 Parts of the code here are based mainly on two other repositories:
 For the lstm part we based our code on https://github.com/sgrvinod/a-PyTorch-Tutorial-to-Image-Captioning, 
