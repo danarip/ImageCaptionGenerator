@@ -11,6 +11,9 @@ from nltk.translate.bleu_score import sentence_bleu
 from source.decoding_utils import greedy_decoding_transformer
 from data_preprocessing import transforms
 
+"""
+This script goes over the test dataset and compute the BLEU score for the generated captions.
+"""
 
 def compute_bleu(
         data_train_images_path=f"{cwd}/data/flickr8k/Flickr8kTrainImages/",

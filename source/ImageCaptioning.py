@@ -28,6 +28,7 @@ from source.networks_transformer import EncoderDecoderTransformer
 from source.networks_lstm import EncoderDecoderLSTMAttention
 from source.data_preprocessing import transforms
 from source.decoding_utils import greedy_decoding_transformer
+from nltk.translate.bleu_score import sentence_bleu
 
 
 def compute_loss_on_dataset(model,

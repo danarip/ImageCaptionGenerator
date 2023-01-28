@@ -9,6 +9,8 @@ with attention. Both architectures are based on encoder of ResNet50.
 - Under `source/tst` there are several scripts that run the pipline. These are the entry point scripts for operating the comparison.
   - `source/tst/tst_lstm_short.py` - runs a relatively short test to examine the lstm architecture
   - `source/tst/tst_transformer_short.py` - runs a relatively short test to examine the transformer architecture
+
+Under the folder `source/` the main code can be found:
 - `ImageCaptioning.py` - This is the main file to run the pipeline itself. If receives a long list of parameters in the `single_run` function.
 - `decoding_utils.py` - do a greedy decoding of the transformer. 
 Specifically, at each round predicts the next word of the transformer. Predicts the most probable
@@ -24,6 +26,7 @@ The encoder for the transformer is based on the same encoder as the lstm from `n
 the work graphs.
 - `split_dataset.py` - given Flickr8K images and captions, split to train, validation, test sets.
 - `show_attention_lstm.py` - show the lstm attention mechanism for the vision part.
+- `compute_bleu.py` - this function goes over the test set and compute the BLEU score.
 - `utils.py` - small scipts to support other functions like transforming from indices to words, 
 from words to indices, etc. 
 
