@@ -1,7 +1,10 @@
 .idea/
 venv/
-data/
 tensorboard/
 models/
 long_experiment_results/
 *pycache*
+data/flickr8k/Flickr8kTestImages/
+data/flickr8k/Flickr8kTrainImages/
+data/flickr8k/Flickr8kValidationImages/
+data/flickr8k/Images/
